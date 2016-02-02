@@ -1,9 +1,6 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
 import sqlite3, os, shutil
 
-
-
-
 class DB:
     def __init__(self, dbname, clone_from=None):
         self.dbname = dbname
@@ -55,6 +52,7 @@ class Memory:
     
 
     def game_setup(self):
+        #The three card types
         self.execute("""
         CREATE TABLE cardtypes(
             type TEXT PRIMARY KEY
@@ -62,6 +60,7 @@ class Memory:
         """)
         self.execute("INSERT INTO cardtypes VALUES ('suspect'),('weapon'),('room')")
 
+        #All the playing cards
         self.execute("""
         CREATE TABLE cards (
             id INTEGER PRIMARY KEY,
@@ -69,24 +68,39 @@ class Memory:
             name TEXT NOT NULL UNIQUE,
             FOREIGN KEY(type) REFERENCES cardtypes(type)
         );
-
         """)
+
+        #Well... players and their figure
         self.execute("""
         CREATE TABLE players (
-            id integer PRIMARY KEY,
-            suspectcard integer NOT NULL,
-            name text NOT NULL,
+            id INTEGER PRIMARY KEY,
+            suspectcard INTEGER NOT NULL,
+            name TEXT NOT NULL,
             FOREIGN KEY(suspectcard) REFERENCES cards(id)
         )
         """)
 
+        #Hard facts or cluelessness: Who holds which card (or does not hold or unable to tell yet) from each player's perspective
         self.execute("""
-        CREATE TABLE mind (
+        CREATE TABLE facts (
             perspective INTEGER NOT NULL,
             player INTEGER NOT NULL,
             card INTEGER NOT NULL,
             has INTEGER DEFAULT NULL,
             likely INTEGER DEFAULT 0,
+            FOREIGN KEY(perspective) REFERENCES players(id),
+            FOREIGN KEY(player) REFERENCES players(id),
+            FOREIGN KEY(card) REFERENCES cards(id)
+        )
+        """)
+
+        #A clue is an unresolved "player X holds one of these" from someone's perspective
+        self.execute("""
+        CREATE TABLE clues (
+            id INTEGER PRIMARY KEY,
+            perspective INTEGER NOT NULL,
+            player INTEGER NOT NULL,
+            card INTEGER NOT NULL,
             FOREIGN KEY(perspective) REFERENCES players(id),
             FOREIGN KEY(player) REFERENCES players(id),
             FOREIGN KEY(card) REFERENCES cards(id)
