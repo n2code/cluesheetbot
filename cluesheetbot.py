@@ -121,11 +121,11 @@ class Memory:
         return
 
     def add_card(self, name, cardtype):
-        self.execute("INSERT INTO cards (type, name) VALUES (?, ?)", (cardtype, name))
+        self.execute("INSERT INTO cards (type, name) VALUES (?, ?)", (cardtype, name,))
         return
 
     def add_player(self, name, suspectcard):
-        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcard, name))
+        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcard, name,))
         return
 
     def init_facts(self):
@@ -158,12 +158,33 @@ class Display:
         return
 
     def print_board(self, memory):
-        memory.execute("SELECT c.name FROM cards c ORDER BY c.type = 'suspect', c.type = 'weapon', c.type = 'room', c.name ASC")
-        cards = [{'name':x[0]} for x in memory.fetchall()]
+        memory.execute("""
+                SELECT c.name, fjoined.player, fjoined.has, fjoined.certainty
+                FROM cards c JOIN
+                    (SELECT player, card, has, certainty FROM facts WHERE perspective = ?) fjoined
+                    ON c.id = fjoined.card
+                ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC
+                """, (memory.perspective,))
+        rows = memory.fetchall()
+        card_names = [] #keep names separately to recall order
+        cards = {}
+        #first aggregate: grouping by card and splitting into players
+        for row in rows:
+            name = row[0]
+            playerid = row[1]
+            if name not in card_names:
+                card_names += [name]
+                cards[name] = {'players':{}}
+            cards[name]['players'][playerid] = {'has':row[2], 'certainty':row[3]}
+        #collection done, now print it
         row = 2
-        for card in cards:
+        for card_name in card_names:
             col = 1
-            self.print_at(row, col, card['name'])
+            self.print_at(row, col, card_name)
+            has_map = {None:'.', 1:'O', 0:'X'}
+            self.print_at(row, col + 20 + 0, has_map[cards[card_name]['players'][1]['has']])
+            self.print_at(row, col + 20 + 2, has_map[cards[card_name]['players'][2]['has']])
+            self.print_at(row, col + 20 + 4, has_map[cards[card_name]['players'][3]['has']])
             row += 1
         return
 
@@ -196,6 +217,7 @@ display.clear_screen()
 #display.print_at(11, 2, "Hallo Welt!")
 #display.print_at(12, 3, "Hallo Welt!")
 
+memory.perspective = 1
 display.print_board(memory)
 
 #display.clear_screen()
