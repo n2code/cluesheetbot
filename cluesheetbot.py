@@ -18,34 +18,41 @@ class DB:
     def execute(self, query, vals):
         return self.cursor.execute(query, vals)
 
+    def fetchall(self):
+        return self.cursor.fetchall()
+
     def destroy(self):
         self.dbconn.close()
         #os.remove(self.dbname)
+        return
 
 
 class Memory:
     forecasting = False
-    brain_file = 'cluesheetbot.py.db'
-    oracle_file = 'cluesheetbot.py.oracle.db'
+    safety_file = 'cluesheetbot.py.backup.db'
+    real_file = 'cluesheetbot.py.dangerzone.db'
     perspective = None
 
     def __init__(self):
-        self.real_brain = DB(self.brain_file)
-        self.oracle_brain = DB(self.oracle_file) #Heh. As if I'd use Oracle.
+        self.backup_brain = DB(self.safety_file)
+        self.real_brain = DB(self.real_file)
         return
 
     def execute(self, query, vals=()):
         if not self.forecasting:
-            self.real_brain.execute(query, vals)
-        return self.oracle_brain.execute(query, vals)
+            self.backup_brain.execute(query, vals)
+        return self.real_brain.execute(query, vals)
+
+    def fetchall(self):
+        return self.real_brain.fetchall()
 
     def start_forecast(self):
         forecasting = True
         return
 
     def forget_future(self):
-        self.oracle_brain.destroy()
-        self.oracle_brain = DB(oracle_file, brain_file) #Clone from backup.
+        self.real_brain.destroy()
+        self.real_brain = DB(real_file, safety_file) #Clone from backup.
         forecasting = False
         return
 
@@ -131,6 +138,7 @@ class Memory:
         return
 
     def game_setup(self):
+        self.init_facts()
         return
 
 
@@ -138,13 +146,26 @@ class Display:
     csi = "\033["
 
     def __init__(self):
-        self.clear_screen()
+        #self.clear_screen()
+        return
 
     def print_at(self, row, col, text):
         print(self.csi + str(row) + ";" + str(col) + "H" + text, end='')
+        return
 
     def clear_screen(self):
         print(self.csi + "2J")
+        return
+
+    def print_board(self, memory):
+        memory.execute("SELECT c.name FROM cards c ORDER BY c.type = 'suspect', c.type = 'weapon', c.type = 'room', c.name ASC")
+        cards = [{'name':x[0]} for x in memory.fetchall()]
+        row = 2
+        for card in cards:
+            col = 1
+            self.print_at(row, col, card['name'])
+            row += 1
+        return
 
 
 memory = Memory()
@@ -169,7 +190,12 @@ memory.add_player("Tobi", 3)
 memory.game_setup()
 
 display = Display()
-display.print_at(10, 1, "Hallo Welt!")
-display.print_at(11, 2, "Hallo Welt!")
-display.print_at(12, 3, "Hallo Welt!")
+display.clear_screen()
+
+#display.print_at(10, 1, "Hallo Welt!")
+#display.print_at(11, 2, "Hallo Welt!")
+#display.print_at(12, 3, "Hallo Welt!")
+
+display.print_board(memory)
+
 #display.clear_screen()
