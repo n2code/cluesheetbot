@@ -1,5 +1,6 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
-import sqlite3, os, shutil
+import sqlite3, os, shutil, string
+import sys, tty, termios
 
 class DB:
     def __init__(self, dbname, clone_from=None):
@@ -144,6 +145,15 @@ class Memory:
 
 class Display:
     csi = "\033["
+    prompt_row = 2
+    prompt_col = 30
+    prompt_width = 40
+    question = ""
+    userinput = ""
+    alert = ""
+    rax_userinput = 30
+    possible = []
+    matches = []
 
     def __init__(self):
         #self.clear_screen()
@@ -188,6 +198,66 @@ class Display:
             row += 1
         return
 
+    def update_prompt(self):
+        prefix = ">>> " 
+        self.print_at(self.prompt_row+0, self.prompt_col, self.question.ljust(self.prompt_width))
+        inputline = prefix + self.userinput
+        self.print_at(self.prompt_row+1, self.prompt_col, inputline+"_".ljust(self.prompt_width))
+
+        if self.alert:
+            self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + "!!! "+self.alert+" !!!").ljust(self.prompt_width))
+            self.alert = ""
+        elif len(self.matches) == 1:
+            self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + "Choose " + self.matches[0].upper() + "? (Enter)").ljust(self.prompt_width))
+        else:
+            suggestions = '/'.join(self.matches)
+            if (len("["+suggestions+"]") > self.prompt_width):
+                suggestions = suggestions[:(self.prompt_width - len("[...]"))] + "..."
+            self.print_at(self.prompt_row+3, self.prompt_col, ("["+suggestions+"]").ljust(self.prompt_width))
+
+        self.print_at(self.prompt_row+1, self.prompt_col + len(inputline), "")
+        sys.stdout.flush()
+        return
+
+    def getch(self):
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
+    def ask_for_input(self, question, possible):
+        self.userinput = ""
+        self.question = question
+        self.possible = possible
+        while True:
+            if not self.userinput:
+                self.matches = self.possible
+            self.update_prompt()
+            char = ord(self.getch())
+            if char == 127: #Delete... deletes one character
+                self.userinput = self.userinput[:-1]
+            elif char == 21 or char == 23: #Ctrl+U and Ctrl+W clears line almost like in bash
+                self.userinput = ""
+            elif char == 9: #Tab completion if 
+                if len(self.matches) == 1:
+                    self.userinput = self.matches[0]
+            elif char == 27:
+                break
+            else:
+                #self.userinput += str(char)
+                if chr(char) in string.ascii_letters + string.digits + ' ':
+                    self.userinput += chr(char)
+            self.matches = []
+            for word in self.possible:
+                if self.userinput.lower() in word.lower():
+                    self.matches += [word]
+            if not self.matches:
+                self.alert = "no matches"
+        return
 
 memory = Memory()
 memory.db_setup()
@@ -213,11 +283,9 @@ memory.game_setup()
 display = Display()
 display.clear_screen()
 
-#display.print_at(10, 1, "Hallo Welt!")
-#display.print_at(11, 2, "Hallo Welt!")
-#display.print_at(12, 3, "Hallo Welt!")
-
 memory.perspective = 1
 display.print_board(memory)
 
-#display.clear_screen()
+display.ask_for_input("Select the room of your accusation:", rooms)
+
+display.clear_screen()
