@@ -154,6 +154,11 @@ class Display:
     max_userinput = 20
     possible = None
     matches = None
+    logs = {'engine':[], 'game':[]}
+    log_row = 7
+    log_col = 30
+    log_height = 16
+    log_width = 40
 
     def __init__(self):
         #self.clear_screen()
@@ -248,9 +253,18 @@ class Display:
 
             #Show prompt/alerts/...
             self.update_prompt()
+            self.update_log()
+            sys.stdout.flush()
 
             #Get input
-            char = ord(self.getch())
+            keycode = self.getch()
+            if keycode == '\033':
+                self.getch() #skip [
+                arrow = {'A':"up",'B':"down",'C':"right",'D':"left"}[self.getch()]
+                self.alert = "Pressed arrow: "+arrow
+                char = 0
+            else:
+                char = ord(keycode)
 
             #Tab cycling, special treatment and skipping regular processing if active
             if char == 9:
@@ -265,10 +279,12 @@ class Display:
                 tabcount = -1
 
             #React to input
-            if char == 127: #Delete... deletes one character
-                self.userinput = self.userinput[:-1]
+            if char == 0:
+                pass #special treatment done already
             elif char == 21 or char == 23: #Ctrl+U and Ctrl+W clears line almost like in bash
                 self.userinput = ""
+            elif char == 127: #Delete... deletes one character
+                self.userinput = self.userinput[:-1]
             elif char == 13:
                 self.userinput = self.userinput.strip()
                 if not self.userinput:
@@ -302,6 +318,42 @@ class Display:
                     self.alert = "No matches!"
         return
 
+    def update_log(self):
+        boxcontent = (self.logs['engine'][-(self.log_height-3):] + [""]*self.log_height)[:(self.log_height-2)]
+
+        row = self.log_row
+        self.print_at(row+0, self.log_col, (" /-----\\").ljust(self.log_width, ' '))
+        self.print_at(row+1, self.log_col, ("/  LOG  \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
+        row += 2
+        for line in boxcontent:
+            self.print_at(row, self.log_col, "|"+line.ljust(self.log_width-2)+"|")
+            row += 1
+        self.print_at(row, self.log_col, "\\"+'-'*(self.log_width-2)+"/")
+        return
+
+    def prepare_log_lines(self, text, breakindent=2):
+        lines = []
+        if '\n' in text:
+            for line in text.split('\n'):
+                lines += add_line(line)
+            return lines
+        else:
+            part = ""
+            while text:
+                upto = self.log_width -2 -len(part)
+                lastspace = text[:upto].rfind(' ') + 1
+                upto = lastspace if lastspace > 0 and len(text) > upto else upto
+                part += text[:upto]
+                text = text[upto:].strip()
+                lines += [part]
+                part = breakindent*' '
+            return lines
+
+    def add_engine_line(self, text):
+        self.logs['engine'] += self.prepare_log_lines(text)
+        return
+
+
 memory = Memory()
 memory.db_setup()
 
@@ -329,9 +381,11 @@ display.clear_screen()
 memory.perspective = 1
 display.print_board(memory)
 
-display.ask_for_input("Select the room of your accusation:", rooms)
-display.ask_for_input("Enter random bullshit:")
-display.ask_for_input("Select anything:", weapons+rooms+suspects)
+#display.ask_for_input("Select the room of your accusation:", rooms)
+#display.ask_for_input("Enter random bullshit:")
+while True:
+    answer = display.ask_for_input("Select anything:", weapons+rooms+suspects)
+    display.add_engine_line("Your selection was "+answer+".")
 
 input("### TERMINATED (Enter to quit)")
 display.clear_screen()
