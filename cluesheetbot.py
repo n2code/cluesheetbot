@@ -151,9 +151,9 @@ class Display:
     question = ""
     userinput = ""
     alert = ""
-    rax_userinput = 30
-    possible = []
-    matches = []
+    max_userinput = 20
+    possible = None
+    matches = None
 
     def __init__(self):
         #self.clear_screen()
@@ -205,15 +205,19 @@ class Display:
         self.print_at(self.prompt_row+1, self.prompt_col, inputline+"_".ljust(self.prompt_width))
 
         if self.alert:
-            self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + self.alert).ljust(self.prompt_width))
+            reactionline = (len(prefix)*' ' + self.alert)
             self.alert = ""
+        elif self.possible is None:
+            reactionline = ""
         elif len(self.matches) == 1:
-            self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + "Choose " + self.matches[0].upper() + "? (Enter)").ljust(self.prompt_width))
+            reactionline = len(prefix)*' ' + "Choose " + self.matches[0].upper() + "? (Enter)"
         else:
             suggestions = '/'.join(self.matches)
             if (len("["+suggestions+"]") > self.prompt_width):
                 suggestions = suggestions[:(self.prompt_width - len("[...]"))] + "..."
-            self.print_at(self.prompt_row+3, self.prompt_col, ("["+suggestions+"]").ljust(self.prompt_width))
+            reactionline = "["+suggestions+"]"
+
+        self.print_at(self.prompt_row+3, self.prompt_col, reactionline.ljust(self.prompt_width))
 
         self.print_at(self.prompt_row+1, self.prompt_col + len(inputline), "")
         sys.stdout.flush()
@@ -227,43 +231,75 @@ class Display:
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if ord(ch) == 17: #Quit with Ctrl+Q
+            sys.exit()
         return ch
 
-    def ask_for_input(self, question, possible):
+    def ask_for_input(self, question, possible=None): #if possible given: allowed answers
         self.userinput = ""
         self.question = question
         self.possible = possible
+        tabcount = -1
+
         while True:
+            #Everything is possible if nothing has been etered
             if not self.userinput:
                 self.matches = self.possible
+
+            #Show prompt/alerts/...
             self.update_prompt()
+
+            #Get input
             char = ord(self.getch())
+
+            #Tab cycling, special treatment and skipping regular processing if active
+            if char == 9:
+                if self.possible:
+                    tabcount += 1
+                    self.userinput = self.possible[tabcount % len(self.possible)]
+                    self.matches = self.possible
+                else:
+                    self.alert = "This is a freestyle prompt!"
+                continue
+            else:
+                tabcount = -1
+
+            #React to input
             if char == 127: #Delete... deletes one character
                 self.userinput = self.userinput[:-1]
             elif char == 21 or char == 23: #Ctrl+U and Ctrl+W clears line almost like in bash
                 self.userinput = ""
-            elif char == 9: #Tab completion if a single match is found
-                if len(self.matches) == 1:
-                    self.userinput = self.matches[0]
-            elif char == 27:
-                break
             elif char == 13:
-                num_matches = len(self.matches)
-                if num_matches == 1 or (num_matches > 1 and self.userinput in self.matches):
-                    self.userinput = self.matches[0]
+                self.userinput = self.userinput.strip()
+                if not self.userinput:
+                    self.alert = "Give me something!"
+                elif self.possible is None:
                     return self.userinput
                 else:
-                    self.alert = "Ambiguous input!"
+                    num_matches = len(self.matches)
+                    if num_matches == 1 or (num_matches > 1 and self.userinput in self.matches):
+                        self.userinput = self.matches[0]
+                        return self.userinput
+                    else:
+                        self.alert = "Ambiguous input!"
             else:
-                #self.userinput += str(char)
-                if chr(char) in string.ascii_letters + string.digits + ' ':
+                if len(self.userinput) >= self.max_userinput:
+                    self.alert = "Maximum input length!"
+                    continue
+                elif chr(char) not in string.ascii_letters + string.digits + ' ':
+                    self.alert = "Invalid character!"
+                    continue
+                else:
                     self.userinput += chr(char)
-            self.matches = []
-            for word in self.possible:
-                if re.match(".*" + ".*".join(self.userinput) + ".*", word, re.IGNORECASE):
-                    self.matches += [word]
-            if not self.matches:
-                self.alert = "No matches!"
+
+            #Process input
+            if self.possible:
+                self.matches = []
+                for word in self.possible:
+                    if re.match(".*" + ".*".join(self.userinput) + ".*", word, re.IGNORECASE):
+                        self.matches += [word]
+                if not self.matches:
+                    self.alert = "No matches!"
         return
 
 memory = Memory()
@@ -294,5 +330,8 @@ memory.perspective = 1
 display.print_board(memory)
 
 display.ask_for_input("Select the room of your accusation:", rooms)
+display.ask_for_input("Enter random bullshit:")
+display.ask_for_input("Select anything:", weapons+rooms+suspects)
 
+input("### TERMINATED (Enter to quit)")
 display.clear_screen()
