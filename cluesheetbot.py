@@ -1,5 +1,5 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
-import sqlite3, os, shutil, string
+import sqlite3, os, shutil, string, re
 import sys, tty, termios
 
 class DB:
@@ -205,7 +205,7 @@ class Display:
         self.print_at(self.prompt_row+1, self.prompt_col, inputline+"_".ljust(self.prompt_width))
 
         if self.alert:
-            self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + "!!! "+self.alert+" !!!").ljust(self.prompt_width))
+            self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + self.alert).ljust(self.prompt_width))
             self.alert = ""
         elif len(self.matches) == 1:
             self.print_at(self.prompt_row+3, self.prompt_col, (len(prefix)*' ' + "Choose " + self.matches[0].upper() + "? (Enter)").ljust(self.prompt_width))
@@ -242,21 +242,28 @@ class Display:
                 self.userinput = self.userinput[:-1]
             elif char == 21 or char == 23: #Ctrl+U and Ctrl+W clears line almost like in bash
                 self.userinput = ""
-            elif char == 9: #Tab completion if 
+            elif char == 9: #Tab completion if a single match is found
                 if len(self.matches) == 1:
                     self.userinput = self.matches[0]
             elif char == 27:
                 break
+            elif char == 13:
+                num_matches = len(self.matches)
+                if num_matches == 1 or (num_matches > 1 and self.userinput in self.matches):
+                    self.userinput = self.matches[0]
+                    return self.userinput
+                else:
+                    self.alert = "Ambiguous input!"
             else:
                 #self.userinput += str(char)
                 if chr(char) in string.ascii_letters + string.digits + ' ':
                     self.userinput += chr(char)
             self.matches = []
             for word in self.possible:
-                if self.userinput.lower() in word.lower():
+                if re.match(".*" + ".*".join(self.userinput) + ".*", word, re.IGNORECASE):
                     self.matches += [word]
             if not self.matches:
-                self.alert = "no matches"
+                self.alert = "No matches!"
         return
 
 memory = Memory()
@@ -264,7 +271,7 @@ memory.db_setup()
 
 suspects = ["Miss Red", "Prof. Purple", "Mrs. Blue", "Rev. Green", "Col. Yellow", "Mrs. White"]
 weapons = ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"]
-rooms = ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+rooms = ["Room", "Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
 
 #Could be way nicer but meh...
 for suspect in suspects:
