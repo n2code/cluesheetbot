@@ -145,7 +145,7 @@ class Memory:
 
 class Display:
     csi = "\033["
-    prompt_row = 2
+    prompt_row = 3
     prompt_col = 30
     prompt_width = 40
     question = ""
@@ -157,7 +157,7 @@ class Display:
     logs = {'engine':[], 'game':[]}
     log_row = 7
     log_col = 30
-    log_height = 8
+    log_height = 16
     log_width = 40
     log_scrollup = 0
     log_max_scrollup = 0
@@ -224,7 +224,7 @@ class Display:
                 suggestions = suggestions[:(self.prompt_width - len("[...]"))] + "..."
             reactionline = "["+suggestions+"]"
 
-        self.print_at(self.prompt_row+3, self.prompt_col, reactionline.ljust(self.prompt_width))
+        self.print_at(self.prompt_row+2, self.prompt_col, reactionline.ljust(self.prompt_width))
 
         self.print_at(self.prompt_row+1, self.prompt_col + len(inputline), "")
         sys.stdout.flush()
@@ -254,6 +254,7 @@ class Display:
                 self.matches = self.possible
 
             #Show prompt/alerts/...
+            self.update_kpis()
             self.update_log()
             self.update_prompt()
             sys.stdout.flush()
@@ -298,8 +299,11 @@ class Display:
                     return self.userinput
                 else:
                     num_matches = len(self.matches)
-                    if num_matches == 1 or (num_matches > 1 and self.userinput in self.matches):
-                        self.userinput = self.matches[0]
+                    if num_matches == 1:
+                        #select typed matching entry
+                        return self.matches[0]
+                    elif (num_matches > 1 and self.userinput in self.matches):
+                        #tab cycled
                         return self.userinput
                     else:
                         self.alert = "Ambiguous input!"
@@ -343,7 +347,7 @@ class Display:
         base = self.log_row
         #print tabs...
         self.print_at(base+0, self.log_col, (" /-----\\").ljust(self.log_width, ' '))
-        self.print_at(base+1, self.log_col, ("/  LOG  \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
+        self.print_at(base+1, self.log_col, ("/  GAME \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
         #...and box with scroll arrows
         row = 1
         end = len(display_content)
@@ -384,6 +388,9 @@ class Display:
             self.log_scrollup += len(lines)
         return
 
+    def update_kpis(self):
+        self.print_at(self.prompt_row-2, self.prompt_col, ".::*** ClueSheetBot 2000 ***::.")
+        return
 
 memory = Memory()
 memory.db_setup()
