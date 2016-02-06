@@ -426,6 +426,10 @@ class Display:
             for line in text.split('\n'):
                 lines += self.prepare_log_lines(line, breakindent)
             return lines
+        elif text == "":
+            return [""]
+        elif re.match("^#FILL\(.\)$", text): #e.g. "#FILL(~)" produces a line full of "~"
+            return [(self.log_width-2)*text[6]]
         else:
             part = ""
             while text:
@@ -443,6 +447,10 @@ class Display:
         self.logs['engine'] += lines
         if self.log_scrollup:
             self.log_scrollup += len(lines)
+        return
+
+    def clearlog(self, text):
+        self.logs['engine'] = []
         return
 
     def update_kpis(self):
@@ -507,7 +515,7 @@ def programloop():
 
 display = Display()
 display.clear_screen()
-display.log("Welcome to Cluedo!\nType available commands in [brackets] to interact. Hit TAB to cycle through offerings and ENTER to accept. Clear input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. CTRL+Q exits immediately.")
+display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options and ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. CTRL+Q exits immediately.")
 
 while True:
     try:
