@@ -157,8 +157,10 @@ class Display:
     logs = {'engine':[], 'game':[]}
     log_row = 7
     log_col = 30
-    log_height = 16
+    log_height = 8
     log_width = 40
+    log_scrollup = 0
+    log_max_scrollup = 0
 
     def __init__(self):
         #self.clear_screen()
@@ -252,8 +254,8 @@ class Display:
                 self.matches = self.possible
 
             #Show prompt/alerts/...
-            self.update_prompt()
             self.update_log()
+            self.update_prompt()
             sys.stdout.flush()
 
             #Get input
@@ -261,7 +263,10 @@ class Display:
             if keycode == '\033':
                 self.getch() #skip [
                 arrow = {'A':"up",'B':"down",'C':"right",'D':"left"}[self.getch()]
-                self.alert = "Pressed arrow: "+arrow
+                if arrow == "up":
+                    self.log_scrollup = min(self.log_scrollup+1, self.log_max_scrollup)
+                elif arrow == "down":
+                    self.log_scrollup = max(self.log_scrollup-1, 0)
                 char = 0
             else:
                 char = ord(keycode)
@@ -319,16 +324,39 @@ class Display:
         return
 
     def update_log(self):
-        boxcontent = (self.logs['engine'][-(self.log_height-3):] + [""]*self.log_height)[:(self.log_height-2)]
+        #what do we have?
+        all_content = self.logs['engine'] + [""]
+        free_height = self.log_height - 2
 
-        row = self.log_row
-        self.print_at(row+0, self.log_col, (" /-----\\").ljust(self.log_width, ' '))
-        self.print_at(row+1, self.log_col, ("/  LOG  \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
-        row += 2
-        for line in boxcontent:
-            self.print_at(row, self.log_col, "|"+line.ljust(self.log_width-2)+"|")
+        #if it's too short, stretch it to fill at least one display
+        if len(all_content) < free_height:
+            all_content += [""]*(free_height-len(all_content))
+
+        #how far can we scroll up?
+        max_scrollup = -min(-len(all_content) + free_height, 0)
+        effective_scrollup = min(self.log_scrollup, max_scrollup)
+        self.log_max_scrollup = max_scrollup
+
+        #calculate window to display
+        display_content = all_content[(-free_height - effective_scrollup):(-effective_scrollup if effective_scrollup else None)]
+
+        base = self.log_row
+        #print tabs...
+        self.print_at(base+0, self.log_col, (" /-----\\").ljust(self.log_width, ' '))
+        self.print_at(base+1, self.log_col, ("/  LOG  \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
+        #...and box with scroll arrows
+        row = 1
+        end = len(display_content)
+        for line in display_content:
+            border = '|'
+            if row in [1, 2] and max_scrollup > effective_scrollup:
+                border = '^'
+            elif row in [end-1, end] and effective_scrollup:
+                border = 'v'
+            self.print_at((base+1)+row, self.log_col, "|"+line.ljust(self.log_width-2)+border)
             row += 1
-        self.print_at(row, self.log_col, "\\"+'-'*(self.log_width-2)+"/")
+        self.print_at((base+1)+row, self.log_col, "\\"+'-'*(self.log_width-2)+"/")
+
         return
 
     def prepare_log_lines(self, text, breakindent=2):
@@ -350,7 +378,10 @@ class Display:
             return lines
 
     def add_engine_line(self, text):
-        self.logs['engine'] += self.prepare_log_lines(text)
+        lines = self.prepare_log_lines(text)
+        self.logs['engine'] += lines
+        if self.log_scrollup:
+            self.log_scrollup += len(lines)
         return
 
 
