@@ -2,7 +2,7 @@
 import sqlite3, os, shutil, string, re
 import sys, tty, termios
 
-class DB:
+class DB(object):
     def __init__(self, dbname, clone_from=None):
         self.dbname = dbname
 
@@ -22,17 +22,37 @@ class DB:
     def fetchall(self):
         return self.cursor.fetchall()
 
+    def get_rowcount(self):
+        return self.cursor.rowcount
+
     def destroy(self):
         self.dbconn.close()
         #os.remove(self.dbname)
         return
 
+class Player(object):
+    def __init__(self, memory, playerid=None, playername=None):
+        select = "SELECT id, porder, suspectcard, name FROM players "
+        if playerid:
+            memory.execute(select + "WHERE id = ?", (playerid,))
+        elif playername:
+            memory.execute(select + "WHERE name = ?", (playername,))
+        else:
+            raise ValueError("Player instantiation without identifier")
+        rows = memory.fetchall()
+        if not rows:
+            raise RuntimeError("Player lookup failed")
+        self.id = rows[0][0]
+        self.order = rows[0][1]
+        self.suspectcardid = rows[0][2]
+        self.name = rows[0][3]
 
-class Memory:
+class Memory(object):
     forecasting = False
     safety_file = 'cluesheetbot.py.backup.db'
     real_file = 'cluesheetbot.py.dangerzone.db'
     perspective = None
+    rowcount = -1
 
     def __init__(self):
         self.backup_brain = DB(self.safety_file)
@@ -42,7 +62,9 @@ class Memory:
     def execute(self, query, vals=()):
         if not self.forecasting:
             self.backup_brain.execute(query, vals)
-        return self.real_brain.execute(query, vals)
+        result = self.real_brain.execute(query, vals)
+        self.rowcount = self.real_brain.get_rowcount()
+        return result
 
     def fetchall(self):
         return self.real_brain.fetchall()
@@ -125,9 +147,9 @@ class Memory:
         self.execute("INSERT INTO cards (type, name) VALUES (?, ?)", (cardtype, name,))
         return
 
-    def add_player(self, name, suspectcard):
-        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcard, name,))
-        return
+    def new_player(self, name, suspectcardid):
+        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcardid, name,))
+        return Player(self, playername=name)
 
     def init_facts(self):
         self.execute("INSERT INTO facts (perspective, player, card) SELECT p1.id, p2.id, c.id FROM players p1 JOIN players p2 JOIN cards c")
@@ -141,6 +163,17 @@ class Memory:
     def game_setup(self):
         self.init_facts()
         return
+
+    def set_perspective(self, playerid):
+        self.perspective = playerid
+        return playerid
+
+    def add_fact(self, player, card, has, certainty=None):
+        if not self.perspective:
+            raise LookupError("No perspective set!")
+        self.execute("""UPDATE facts SET has = ?, certainty = ?
+                        WHERE perspective = ? AND player = ? AND card = ?""",
+                (has, certainty, self.perspective, player, card))
 
 
 class Display:
@@ -407,9 +440,11 @@ for weapon in weapons:
 for room in rooms:
     memory.add_card(room, "room")
 
-memory.add_player("Niko", 1)
-memory.add_player("Tiki", 2)
-memory.add_player("Tobi", 3)
+players = [
+    memory.new_player("Niko", suspectcardid=1),
+    memory.new_player("Tiki", suspectcardid=2),
+    memory.new_player("Tobi", suspectcardid=3)
+]
 
 memory.game_setup()
 
@@ -418,6 +453,9 @@ display.clear_screen()
 
 memory.perspective = 1
 display.print_board(memory)
+
+display.add_engine_line("Hello "+players[1].name)
+display.add_engine_line("Hello "+Player(memory, playerid=3).name)
 
 #display.ask_for_input("Select the room of your accusation:", rooms)
 #display.ask_for_input("Enter random bullshit:")
