@@ -40,19 +40,35 @@ class Player(object):
         else:
             raise ValueError("Player instantiation without identifier")
         rows = memory.fetchall()
-        if not rows:
+        if len(rows) != 1:
             raise RuntimeError("Player lookup failed")
         self.id = rows[0][0]
         self.order = rows[0][1]
-        self.suspectcardid = rows[0][2]
+        self.suspectcard = Card(memory, rows[0][2])
         self.name = rows[0][3]
+
+class Card(object):
+    def __init__(self, memory, cardid=None, cardname=None):
+        select = "SELECT id, type, name FROM cards "
+        if cardid:
+            memory.execute(select + "WHERE id = ?", (cardid,))
+        elif cardname:
+            memory.execute(select + "WHERE name = ?", (cardname,))
+        else:
+            raise ValueError("Card instantiation without identifier")
+        rows = memory.fetchall()
+        if len(rows) != 1:
+            raise RuntimeError("Card lookup failed")
+        self.id = rows[0][0]
+        self.type = rows[0][1]
+        self.name = rows[0][2]
 
 class Memory(object):
     forecasting = False
     safety_file = 'cluesheetbot.py.backup.db'
     real_file = 'cluesheetbot.py.dangerzone.db'
     perspective = None
-    rowcount = -1
+    rowcount = 0
 
     def __init__(self):
         self.backup_brain = DB(self.safety_file)
@@ -143,12 +159,12 @@ class Memory(object):
         self.execute("INSERT INTO cardtypes VALUES ('suspect'),('weapon'),('room')")
         return
 
-    def add_card(self, name, cardtype):
+    def new_card(self, name, cardtype):
         self.execute("INSERT INTO cards (type, name) VALUES (?, ?)", (cardtype, name,))
-        return
+        return Card(self, cardname=name)
 
-    def new_player(self, name, suspectcardid):
-        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcardid, name,))
+    def new_player(self, name, suspectcard):
+        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcard.id, name,))
         return Player(self, playername=name)
 
     def init_facts(self):
@@ -173,7 +189,7 @@ class Memory(object):
             raise LookupError("No perspective set!")
         self.execute("""UPDATE facts SET has = ?, certainty = ?
                         WHERE perspective = ? AND player = ? AND card = ?""",
-                (has, certainty, self.perspective, player, card))
+                (has, certainty, self.perspective, player.id, card.id))
 
 
 class Display:
@@ -428,22 +444,25 @@ class Display:
 memory = Memory()
 memory.db_setup()
 
-suspects = ["Miss Red", "Prof. Purple", "Mrs. Blue", "Rev. Green", "Col. Yellow", "Mrs. White"]
-weapons = ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"]
-rooms = ["Room", "Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+cards = {
+        "names": {
+            "suspects": ["Miss Red", "Prof. Purple", "Mrs. Blue", "Rev. Green", "Col. Yellow", "Mrs. White"],
+            "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
+            "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+            },
+        "suspects": [],
+        "weapons": [],
+        "rooms": []
+        }
 
-#Could be way nicer but meh...
-for suspect in suspects:
-    memory.add_card(suspect, "suspect")
-for weapon in weapons:
-    memory.add_card(weapon, "weapon")
-for room in rooms:
-    memory.add_card(room, "room")
+for cardtype in cards["names"]:
+    for cardname in cards["names"][cardtype]:
+        cards[cardtype] += [memory.new_card(cardname, cardtype.rstrip('s'))]
 
 players = [
-    memory.new_player("Niko", suspectcardid=1),
-    memory.new_player("Tiki", suspectcardid=2),
-    memory.new_player("Tobi", suspectcardid=3)
+    memory.new_player("Niko", Card(memory, cardid=1)),
+    memory.new_player("Tiki", Card(memory, cardid=2)),
+    memory.new_player("Tobi", Card(memory, cardid=3)),
 ]
 
 memory.game_setup()
@@ -454,13 +473,14 @@ display.clear_screen()
 memory.perspective = 1
 display.print_board(memory)
 
-display.add_engine_line("Hello "+players[1].name)
+display.add_engine_line(players[1].name+" is playing "+players[1].suspectcard.name)
 display.add_engine_line("Hello "+Player(memory, playerid=3).name)
 
 #display.ask_for_input("Select the room of your accusation:", rooms)
 #display.ask_for_input("Enter random bullshit:")
 while True:
-    answer = display.ask_for_input("Select anything:", weapons+rooms+suspects)
+    answer = display.ask_for_input("Select anything:",
+            cards["names"]["suspects"]+cards["names"]["weapons"]+cards["names"]["rooms"])
     display.add_engine_line("Your selection was "+answer+".")
 
 input("### TERMINATED (Enter to quit)")
