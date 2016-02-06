@@ -1,5 +1,5 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
-import sqlite3, os, shutil, string, re
+import sqlite3, os, shutil, string, re, traceback
 import sys, tty, termios
 
 class DB(object):
@@ -30,6 +30,7 @@ class DB(object):
         #os.remove(self.dbname)
         return
 
+
 class Player(object):
     def __init__(self, memory, playerid=None, playername=None):
         select = "SELECT id, porder, suspectcard, name FROM players "
@@ -47,6 +48,7 @@ class Player(object):
         self.suspectcard = Card(memory, rows[0][2])
         self.name = rows[0][3]
 
+
 class Card(object):
     def __init__(self, memory, cardid=None, cardname=None):
         select = "SELECT id, type, name FROM cards "
@@ -63,6 +65,7 @@ class Card(object):
         self.type = rows[0][1]
         self.name = rows[0][2]
 
+
 class Memory(object):
     forecasting = False
     safety_file = 'cluesheetbot.py.backup.db'
@@ -70,9 +73,12 @@ class Memory(object):
     perspective = None
     rowcount = 0
 
-    def __init__(self):
-        self.backup_brain = DB(self.safety_file)
-        self.real_brain = DB(self.real_file)
+    def __init__(self, restore_file=None):
+        if restore_file:
+            raise NotImplementedError("restore not coded yet")
+        else:
+            self.backup_brain = DB(self.safety_file)
+            self.real_brain = DB(self.real_file)
         return
 
     def execute(self, query, vals=()):
@@ -194,7 +200,7 @@ class Memory(object):
 
 class Display:
     csi = "\033["
-    prompt_row = 3
+    prompt_row = 20
     prompt_col = 30
     prompt_width = 40
     question = ""
@@ -204,12 +210,14 @@ class Display:
     possible = None
     matches = None
     logs = {'engine':[], 'game':[]}
-    log_row = 7
+    log_row = 3
     log_col = 30
-    log_height = 16
+    log_height = 15
     log_width = 40
     log_scrollup = 0
     log_max_scrollup = 0
+    title_row = 2
+    title_col = 39
 
     def __init__(self):
         #self.clear_screen()
@@ -288,10 +296,10 @@ class Display:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         if ord(ch) == 17: #Quit with Ctrl+Q
-            sys.exit()
+            raise KeyboardInterrupt("Fast quit. Bye!")
         return ch
 
-    def ask_for_input(self, question, possible=None): #if possible given: allowed answers
+    def ask(self, question, possible=None): #if possible given: allowed answers
         self.userinput = ""
         self.question = question
         self.possible = possible
@@ -395,8 +403,8 @@ class Display:
 
         base = self.log_row
         #print tabs...
-        self.print_at(base+0, self.log_col, (" /-----\\").ljust(self.log_width, ' '))
-        self.print_at(base+1, self.log_col, ("/  GAME \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
+        self.print_at(base+0, self.log_col, (" /------\\").ljust(self.log_width, ' '))
+        self.print_at(base+1, self.log_col, ("/  GAME  \\ ENGINE \\").ljust(self.log_width-1, '-')+"\\")
         #...and box with scroll arrows
         row = 1
         end = len(display_content)
@@ -416,7 +424,7 @@ class Display:
         lines = []
         if '\n' in text:
             for line in text.split('\n'):
-                lines += add_line(line)
+                lines += self.prepare_log_lines(line, breakindent)
             return lines
         else:
             part = ""
@@ -430,7 +438,7 @@ class Display:
                 part = breakindent*' '
             return lines
 
-    def add_engine_line(self, text):
+    def log(self, text):
         lines = self.prepare_log_lines(text)
         self.logs['engine'] += lines
         if self.log_scrollup:
@@ -438,12 +446,13 @@ class Display:
         return
 
     def update_kpis(self):
-        self.print_at(self.prompt_row-2, self.prompt_col, ".::*** ClueSheetBot 2000 ***::.")
+        self.print_at(self.title_row, self.title_col, ".::*** ClueSheetBot 2000 ***::.")
         return
 
-memory = Memory()
-memory.db_setup()
 
+### GAME FLOW ###
+
+#Initialization
 cards = {
         "names": {
             "suspects": ["Miss Red", "Prof. Purple", "Mrs. Blue", "Rev. Green", "Col. Yellow", "Mrs. White"],
@@ -455,33 +464,60 @@ cards = {
         "rooms": []
         }
 
-for cardtype in cards["names"]:
-    for cardname in cards["names"][cardtype]:
-        cards[cardtype] += [memory.new_card(cardname, cardtype.rstrip('s'))]
 
-players = [
-    memory.new_player("Niko", Card(memory, cardid=1)),
-    memory.new_player("Tiki", Card(memory, cardid=2)),
-    memory.new_player("Tobi", Card(memory, cardid=3)),
-]
+def programloop():
+    action = display.ask("What now?", ["new game", "load backup", "exit"])
 
-memory.game_setup()
+    if action == "exit":
+        display.clear_screen()
+        print("\nBye!")
+        sys.exit()
+
+    elif action == "load backup":
+        memory = Memory(restore_file=Memory.safety_file)
+
+    elif action == "new game":
+        memory = Memory()
+        memory.db_setup()
+
+        for cardtype in cards["names"]:
+            for cardname in cards["names"][cardtype]:
+                cards[cardtype] += [memory.new_card(cardname, cardtype.rstrip('s'))]
+
+        players = [
+            memory.new_player("Niko", Card(memory, cardid=1)),
+            memory.new_player("Tiki", Card(memory, cardid=2)),
+            memory.new_player("Tobi", Card(memory, cardid=3)),
+        ]
+
+        memory.game_setup()
+        memory.perspective = 1
+        display.print_board(memory)
+
+        display.log(players[1].name+" is playing "+players[1].suspectcard.name)
+        display.log("Hello "+Player(memory, playerid=3).name)
+
+        while True:
+            answer = display.ask("Select anything:",
+                    cards["names"]["suspects"]+cards["names"]["weapons"]+cards["names"]["rooms"])
+            display.log("Your selection was "+answer+".")
+
+
+### REAL EXECUTION
 
 display = Display()
 display.clear_screen()
+display.log("Welcome to Cluedo!\nType available commands in [brackets] to interact. Hit TAB to cycle through offerings and ENTER to accept. Clear input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. CTRL+Q exits immediately.")
 
-memory.perspective = 1
-display.print_board(memory)
-
-display.add_engine_line(players[1].name+" is playing "+players[1].suspectcard.name)
-display.add_engine_line("Hello "+Player(memory, playerid=3).name)
-
-#display.ask_for_input("Select the room of your accusation:", rooms)
-#display.ask_for_input("Enter random bullshit:")
 while True:
-    answer = display.ask_for_input("Select anything:",
-            cards["names"]["suspects"]+cards["names"]["weapons"]+cards["names"]["rooms"])
-    display.add_engine_line("Your selection was "+answer+".")
+    try:
+        programloop()
+    except KeyboardInterrupt as e:
+        display.clear_screen()
+        print("Fast quit... bye!")
+        sys.exit()
+    except Exception as e:
+        display.clear_screen()
+        traceback.print_exc()
+        sys.exit()
 
-input("### TERMINATED (Enter to quit)")
-display.clear_screen()
