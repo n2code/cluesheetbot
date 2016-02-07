@@ -315,7 +315,7 @@ class Display:
         return
 
     def update_prompt(self):
-        prefix = ">>> " 
+        prefix = ">>> "
         self.print_at(self.prompt_row+0, self.prompt_col, self.question.ljust(self.prompt_width))
         inputline = prefix + self.userinput
         self.print_at(self.prompt_row+1, self.prompt_col, (inputline+"_").ljust(self.prompt_width))
@@ -695,7 +695,7 @@ def gameloop(memory):
     display.print_board(memory)
     action = display.ask("", ["turn", "manual fact", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
-    
+
     def ask_perspectives():
         playernames = [p.name for p in memory.get_players()]
         perspective_input = display.ask("Recorded from whose perspective?", playernames+["all"])
@@ -754,7 +754,7 @@ def gameloop(memory):
 
                 display.log(interviewee.name+" shows "+player.name+" "+(shown.name.upper() if player == memory.user else "a card")+".")
                 break #turn ends when someone can show
-                
+
             else: #cannot show so everyone gains facts
                 for inspector in memory.get_players():
                     for lead in leads:
@@ -763,7 +763,7 @@ def gameloop(memory):
                 display.log(interviewee.name+" cannot show a card.")
 
             interviewee = memory.next_player(interviewee)
-        
+
         memory.whose_turn = memory.next_player(memory.whose_turn)
 
 
