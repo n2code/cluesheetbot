@@ -150,10 +150,8 @@ class Memory(object):
         self.execute("""
         CREATE TABLE clues (
             turn INTEGER PRIMARY KEY,
-            perspective INTEGER NOT NULL,
             player INTEGER NOT NULL,
             card INTEGER NOT NULL,
-            FOREIGN KEY(perspective) REFERENCES players(id),
             FOREIGN KEY(player) REFERENCES players(id),
             FOREIGN KEY(card) REFERENCES cards(id)
         )
@@ -202,6 +200,12 @@ class Memory(object):
                         WHERE perspective = ? AND player = ? AND card = ?""",
                 (has, certainty, self.perspective, player.id, card.id))
 
+    def add_clue(self, player, card, has, certainty=None):
+        if not self.perspective:
+            raise LookupError("No perspective set!")
+        self.execute("""UPDATE facts SET has = ?, certainty = ?
+                        WHERE perspective = ? AND player = ? AND card = ?""",
+                (has, certainty, self.perspective, player.id, card.id))
 
 class Display:
     csi = "\033["
@@ -601,8 +605,6 @@ def gameloop(memory):
 
         display.log("Fact manually added.")
 
-    elif action == "clue":
-        pass
 
 ### REAL EXECUTION
 
