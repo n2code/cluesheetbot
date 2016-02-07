@@ -1,5 +1,5 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
-import sqlite3, os, shutil, string, re, traceback
+import sqlite3, os, shutil, string, re, datetime, traceback
 import sys, tty, termios
 
 class DB(object):
@@ -255,7 +255,7 @@ class Display:
     sheet_row = 2
     sheet_col = 2
     simbuffer = ""
-    recording = False
+    recording = True
     recordbuffer = ""
 
     def __init__(self):
@@ -331,13 +331,24 @@ class Display:
         sys.stdout.flush()
         return
 
-    def simulate_input(self, comma_separated_commands):
-        self.simbuffer += comma_separated_commands.replace(',','\r\n')
-        return
+    def load_recording(self, filename, inform_user=True):
+        with open(filename, "r", newline='') as save:
+            self.simbuffer = save.read()
+        if inform_user:
+            display.log("Loading game from "+filename)
+
+    def save_recording(self, filename, inform_user=True):
+        with open(filename, "w", newline='') as save:
+            save.write(self.recordbuffer)
+        if inform_user:
+            display.log("Saved game as "+filename)
 
     def getch(self):
         if self.simbuffer:
             ch, self.simbuffer = self.simbuffer[0], self.simbuffer[1:]
+            if not self.simbuffer:
+                display.log("Game successfully loaded!")
+                termios.tcflush(sys.stdin, termios.TCIOFLUSH)
         else:
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)
@@ -348,7 +359,11 @@ class Display:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
         #self.log("Getch received: "+str(ord(ch)))
-        if self.recording:
+
+        if ord(ch) == 19: #Manual save with Ctrl+S
+            filename = "CSBot_"+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")+".sav"
+            self.save_recording(filename, inform_user=True)
+        elif self.recording: #in else to not record manual saves
             self.recordbuffer += ch
 
         if ord(ch) == 17: #Quit with Ctrl+Q
@@ -549,13 +564,13 @@ cards = {
 
 
 def programloop():
-    action = display.ask("", ["new game", "load backup", "exit"])
+    action = display.ask("", ["new game", "exit"])
 
     if action == "exit":
         return True
 
-    elif action == "load backup":
-        memory = Memory(restore_file=Memory.safety_file)
+#    elif action == "load backup":
+#        memory = Memory(restore_file=Memory.safety_file)
 
     elif action == "new game":
         memory = Memory()
@@ -580,6 +595,7 @@ def programloop():
                     display.alert = "Two players or more needed!"
                 else:
                     adding = False
+                    display.log("The game is on!")
 
             elif action == "add player":
                 name_pick = display.ask("Player name:")
@@ -644,6 +660,8 @@ def gameloop(memory):
         display.log("Fact manually added.")
 
     elif action == "turn":
+        display.save_recording("AutosaveBeforeTurn.sav", inform_user=False)
+
         player = display.pick_player(memory, "Whose turn?") #TODO auto detect
         room = display.pick_card(memory, "Suggested room of the murder:", "room")
         suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
@@ -683,8 +701,8 @@ display = Display()
 display.clear_screen()
 display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
 
-#debug:
-display.simulate_input("new,add,Niko,green,add,Tiki,red,add,Tobi,yellow,start,turn,Niko,ballroom,red,candle,pass,show,red,")
+if sys.argv[1:]:
+    display.load_recording(sys.argv[1])
 
 while True:
     try:
