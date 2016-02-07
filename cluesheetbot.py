@@ -586,7 +586,7 @@ def programloop():
             for cardname in cards["names"][cardtype]:
                 memory.new_card(cardname, cardtype.rstrip('s'))
 
-        display.log("#FILL(~)\nLet's prepare the game!\nAdd all players starting with you and proceeding clockwise. Commence the game when ready.")
+        display.log("#FILL(#)\nLet's prepare the game!\nAdd all players starting with you and proceeding clockwise. Commence the game when ready.")
 
         adding = True
         while adding:
@@ -672,6 +672,7 @@ def gameloop(memory):
             display.log("Fact manually added.")
 
     elif action == "turn":
+        display.log("#FILL(-)\n")
         player = display.pick_player(memory, "Whose turn?") #TODO auto detect
         room = display.pick_card(memory, "Suggested room of the murder:", "room")
         suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
