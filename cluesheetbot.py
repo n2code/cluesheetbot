@@ -420,7 +420,7 @@ class Display:
                 tabcount = -1
 
             #React to input
-            if char == 0:
+            if char in [0, 19]:
                 pass #special treatment done already
             elif char == 21 or char == 23: #Ctrl+U and Ctrl+W clears line almost like in bash
                 self.userinput = ""
@@ -551,6 +551,12 @@ class Display:
             cards = [c for c in cards if c.type == cardtype.rstrip('s')]
         return Card(memory, cardname=display.ask(question, [c.name for c in cards]))
 
+    def refresh(self, memory):
+        self.update_kpis()
+        self.update_log()
+        self.update_prompt()
+        self.print_board(memory)
+
 ### GAME FLOW ###
 
 #Initialization
@@ -631,7 +637,8 @@ def programloop():
 
 def gameloop(memory):
     display.print_board(memory)
-    action = display.ask("", ["turn", "manual fact", "quit"])
+    action = display.ask("", ["turn", "manual fact", "refresh", "quit"])
+    display.save_recording("autosave.sav", inform_user=False)
     
     def ask_perspectives():
         playernames = [p.name for p in memory.get_players()]
@@ -648,20 +655,23 @@ def gameloop(memory):
             display.log("You quit the game prematurely.")
             return True
 
+    elif action == "refresh":
+        display.log("Manual screen refresh.")
+        display.refresh(memory)
+
     elif action == "manual fact":
-        player = display.pick_player(memory, "Fact about which player?")
-        card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
-        has_options = {"holding":True, "missing":False, "unknown":None}
-        has = has_options[display.ask("What about the card?", list(has_options))]
+        if display.ask("Override mechanics and manually enter fact?", ["override", "cancel"]) == "override":
+            player = display.pick_player(memory, "Fact about which player?")
+            card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
+            has_options = {"holding":True, "missing":False, "unknown":None}
+            has = has_options[display.ask("What about the card?", list(has_options))]
 
-        for current_perspective in ask_perspectives():
-            memory.add_fact(player, card, has, certainty=None, perspective=current_perspective)
+            for current_perspective in ask_perspectives():
+                memory.add_fact(player, card, has, certainty=None, perspective=current_perspective)
 
-        display.log("Fact manually added.")
+            display.log("Fact manually added.")
 
     elif action == "turn":
-        display.save_recording("AutosaveBeforeTurn.sav", inform_user=False)
-
         player = display.pick_player(memory, "Whose turn?") #TODO auto detect
         room = display.pick_card(memory, "Suggested room of the murder:", "room")
         suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
@@ -685,6 +695,7 @@ def gameloop(memory):
                 memory.add_clue(interviewee, leads)
 
                 display.log(interviewee.name+" shows "+player.name+" "+(shown.name.upper() if player == memory.user else "a card")+".")
+                break #turn ends when someone can show
                 
             else: #cannot show so everyone gains facts
                 for inspector in memory.get_players():
