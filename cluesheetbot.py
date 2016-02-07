@@ -213,7 +213,7 @@ class Memory(object):
 class Display:
     csi = "\033["
     prompt_row = 20
-    prompt_col = 30
+    prompt_col = 34
     prompt_width = 40
     question = ""
     userinput = ""
@@ -223,13 +223,15 @@ class Display:
     matches = None
     logs = {'engine':[], 'game':[]}
     log_row = 3
-    log_col = 30
+    log_col = 34
     log_height = 15
     log_width = 40
     log_scrollup = 0
     log_max_scrollup = 0
     title_row = 2
-    title_col = 39
+    title_col = 43
+    sheet_row = 2
+    sheet_col = 2
 
     def __init__(self):
         #self.clear_screen()
@@ -254,6 +256,7 @@ class Display:
         rows = memory.fetchall()
         card_names = [] #keep names separately to recall order
         cards = {}
+
         #first aggregate: grouping by card and splitting into players
         for row in rows:
             name = row[0]
@@ -262,15 +265,19 @@ class Display:
                 card_names += [name]
                 cards[name] = {'players':{}}
             cards[name]['players'][playerid] = {'has':row[2], 'certainty':row[3]}
+
         #collection done, now print it
-        row = 2
+        row = self.sheet_row
+        players = memory.get_players()
+        players.sort(key = lambda p: p.order)
         for card_name in card_names:
-            col = 1
+            col = self.sheet_col
             self.print_at(row, col, card_name)
             has_map = {None:'.', 1:'O', 0:'X'}
-            self.print_at(row, col + 20 + 0, has_map[cards[card_name]['players'][1]['has']])
-            self.print_at(row, col + 20 + 2, has_map[cards[card_name]['players'][2]['has']])
-            self.print_at(row, col + 20 + 4, has_map[cards[card_name]['players'][3]['has']])
+            col_offset = 0
+            for player in players:
+                self.print_at(row, col + 20 + col_offset, has_map[cards[card_name]['players'][player.id]['has']])
+                col_offset += 2
             row += 1
         return
 
@@ -334,11 +341,14 @@ class Display:
             keycode = self.getch()
             if keycode == '\033':
                 self.getch() #skip [
-                arrow = {'A':"up",'B':"down",'C':"right",'D':"left"}[self.getch()]
-                if arrow == "up":
-                    self.log_scrollup = min(self.log_scrollup+1, self.log_max_scrollup)
-                elif arrow == "down":
-                    self.log_scrollup = max(self.log_scrollup-1, 0)
+                keycode = self.getch()
+                arrows = {'A':"up",'B':"down",'C':"right",'D':"left"}
+                if keycode in arrows:
+                    arrow = arrows[keycode]
+                    if arrow == "up":
+                        self.log_scrollup = min(self.log_scrollup+1, self.log_max_scrollup)
+                    elif arrow == "down":
+                        self.log_scrollup = max(self.log_scrollup-1, 0)
                 char = 0
             else:
                 char = ord(keycode)
@@ -485,7 +495,7 @@ cards = {
 
 
 def programloop():
-    action = display.ask("What now?", ["new game", "load backup", "exit"])
+    action = display.ask("", ["new game", "load backup", "exit"])
 
     if action == "exit":
         display.clear_screen()
@@ -503,11 +513,11 @@ def programloop():
             for cardname in cards["names"][cardtype]:
                 memory.new_card(cardname, cardtype.rstrip('s'))
 
-        display.log("#FILL(~)\nLet's prepare the game!")
+        display.log("#FILL(~)\nLet's prepare the game!\nAdd all players starting with you and proceeding clockwise. Commence the game when ready.")
 
         adding = True
         while adding:
-            action = display.ask("Add players and start when ready.", ["add player", "start game", "abort"])
+            action = display.ask("", ["add player", "start game", "abort"])
 
             if action == "abort":
                 display.log("Aborting game creation.")
@@ -529,7 +539,7 @@ def programloop():
                 picked_suspects = [p.suspectcard.name for p in players]
                 suspectnames = [c.name for c in memory.get_cards() if c.type == "suspect" and c.name not in picked_suspects]
                 if not suspectnames:
-                    display.log("Already at player maximum.")
+                    display.alert = "Already at player maximum!"
                     continue
                 suspect_pick = display.ask(name_pick+"'s pawn:", suspectnames)
                 suspectcard = Card(memory, cardname=suspect_pick)
