@@ -190,6 +190,18 @@ class Memory(object):
         self.perspective = playerid
         return playerid
 
+    def get_players(self):
+        self.execute("SELECT id FROM players")
+        rows = self.fetchall()
+        players = [Player(self, playerid=row[0]) for row in rows]
+        return players
+
+    def get_cards(self):
+        self.execute("SELECT id FROM cards")
+        rows = self.fetchall()
+        cards = [Card(self, cardid=row[0]) for row in rows]
+        return cards
+
     def add_fact(self, player, card, has, certainty=None):
         if not self.perspective:
             raise LookupError("No perspective set!")
@@ -306,9 +318,11 @@ class Display:
         tabcount = -1
 
         while True:
-            #Everything is possible if nothing has been etered
+            #Everything is possible if nothing has been entered
             if not self.userinput:
                 self.matches = self.possible
+                if self.matches and len(self.matches) == 1:
+                    (self.userinput,) = self.matches
 
             #Show prompt/alerts/...
             self.update_kpis()
@@ -466,10 +480,7 @@ cards = {
             "suspects": ["Miss Red", "Prof. Purple", "Mrs. Blue", "Rev. Green", "Col. Yellow", "Mrs. White"],
             "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
             "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
-            },
-        "suspects": [],
-        "weapons": [],
-        "rooms": []
+            }
         }
 
 
@@ -490,26 +501,50 @@ def programloop():
 
         for cardtype in cards["names"]:
             for cardname in cards["names"][cardtype]:
-                cards[cardtype] += [memory.new_card(cardname, cardtype.rstrip('s'))]
+                memory.new_card(cardname, cardtype.rstrip('s'))
 
-        players = [
-            memory.new_player("Niko", Card(memory, cardid=1)),
-            memory.new_player("Tiki", Card(memory, cardid=2)),
-            memory.new_player("Tobi", Card(memory, cardid=3)),
-        ]
+        display.log("#FILL(~)\nLet's prepare the game!")
+
+        adding = True
+        while adding:
+            action = display.ask("Add players and start when ready.", ["add player", "start game", "abort"])
+
+            if action == "abort":
+                display.log("Aborting game creation.")
+                return
+
+            elif action == "start game":
+                if len(memory.get_players()) < 2:
+                    display.alert = "Two players or more needed!"
+                else:
+                    adding = False
+
+            elif action == "add player":
+                name_pick = display.ask("Player name:")
+                players = memory.get_players()
+                playernames = [p.name for p in players]
+                while name_pick in playernames:
+                    name_pick = display.ask("Please chose a different name:")
+
+                picked_suspects = [p.suspectcard.name for p in players]
+                suspectnames = [c.name for c in memory.get_cards() if c.type == "suspect" and c.name not in picked_suspects]
+                if not suspectnames:
+                    display.log("Already at player maximum.")
+                    continue
+                suspect_pick = display.ask(name_pick+"'s pawn:", suspectnames)
+                suspectcard = Card(memory, cardname=suspect_pick)
+
+                memory.new_player(name_pick, suspectcard)
+                display.log("Player "+str(len(playernames)+1)+": "+name_pick+" as "+suspect_pick)
+
 
         memory.game_setup()
         memory.perspective = 1
         display.print_board(memory)
 
-        display.log(players[1].name+" is playing "+players[1].suspectcard.name)
-        display.log("Hello "+Player(memory, playerid=3).name)
-
         while True:
-            answer = display.ask("Select anything:",
-                    cards["names"]["suspects"]+cards["names"]["weapons"]+cards["names"]["rooms"])
+            answer = display.ask("Select anything:", [c.name for c in memory.get_cards()])
             display.log("Your selection was "+answer+".")
-
 
 ### REAL EXECUTION
 
