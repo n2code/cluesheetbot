@@ -196,7 +196,6 @@ class Memory(object):
         return cards
 
     def add_fact(self, player, card, has, certainty=None):
-        display.log("add with persp "+str(self.perspective))
         if not self.perspective:
             raise LookupError("No perspective set!")
         self.execute("""UPDATE facts SET has = ?, certainty = ?
@@ -226,6 +225,7 @@ class Display:
     title_col = 43
     sheet_row = 2
     sheet_col = 2
+    simbuffer = ""
 
     def __init__(self):
         #self.clear_screen()
@@ -300,14 +300,21 @@ class Display:
         sys.stdout.flush()
         return
 
+    def simulate_input(self, comma_separated_commands):
+        self.simbuffer += comma_separated_commands.replace(',','\r\n')
+        return
+
     def getch(self):
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(sys.stdin.fileno())
-            ch = sys.stdin.read(1)
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if self.simbuffer:
+            ch, self.simbuffer = self.simbuffer[0], self.simbuffer[1:]
+        else:
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(sys.stdin.fileno())
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         #self.log("Getch received: "+str(ord(ch)))
         if ord(ch) == 17: #Quit with Ctrl+Q
             raise SystemExit("fast quit")
@@ -534,8 +541,9 @@ def programloop():
             elif action == "add player":
                 name_pick = display.ask("Player name:")
                 players = memory.get_players()
-                playernames = [p.name for p in players]
-                while name_pick in playernames:
+                playernames_lower = [p.name.lower() for p in players]
+                forbidden = ["all"]
+                while name_pick.lower() in playernames_lower + ["all"]:
                     name_pick = display.ask("Please chose a different name:")
 
                 picked_suspects = [p.suspectcard.name for p in players]
@@ -547,7 +555,7 @@ def programloop():
                 suspectcard = Card(memory, cardname=suspect_pick)
 
                 memory.new_player(name_pick, suspectcard)
-                display.log("Player "+str(len(playernames)+1)+": "+name_pick+" as "+suspect_pick)
+                display.log("Player "+str(len(players)+1)+": "+name_pick+" as "+suspect_pick)
 
 
         memory.init_facts()
@@ -564,6 +572,16 @@ def programloop():
 def gameloop(memory):
     display.print_board(memory)
     action = display.ask("", ["fact", "quit"])
+    
+    def ask_perspective_ids():
+        playernames = [p.name for p in memory.get_players()]
+        perspective_input = display.ask("Recorded from whose perspective?", playernames+["all"])
+        if perspective_input == "all":
+            chosen = playernames
+        else:
+            chosen = [perspective_input]
+        return [Player(memory, playername=x).id for x in chosen]
+
 
     if action == "quit":
         if display.ask("Really quit the running game?", ["yes", "no", "cancel"]) == "yes":
@@ -571,23 +589,29 @@ def gameloop(memory):
             return True
 
     elif action == "fact":
-        perspective_player = Player(memory, playername=display.ask("Fact from whose perspective?", [p.name for p in memory.get_players()]))
-        memory.perspective = perspective_player.id
-
         player = Player(memory, playername=display.ask("Fact about which player?", [p.name for p in memory.get_players()]))
         card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
         has_options = {"holding":True, "missing":False, "unknown":None}
         has = has_options[display.ask("What about the card?", list(has_options))]
-        memory.add_fact(player, card, has, certainty=None)
 
+        for current_perspective in ask_perspective_ids():
+            memory.perspective = current_perspective
+            memory.add_fact(player, card, has, certainty=None)
         memory.perspective = memory.perspective_default
 
+        display.log("Fact manually added.")
+
+    elif action == "clue":
+        pass
 
 ### REAL EXECUTION
 
 display = Display()
 display.clear_screen()
 display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
+
+#debug:
+display.simulate_input("new,add,Niko,green,add,Tiki,red,add,Tobi,yellow,start,")
 
 while True:
     try:
