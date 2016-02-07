@@ -71,6 +71,7 @@ class Memory(object):
     safety_file = 'cluesheetbot.py.backup.db'
     real_file = 'cluesheetbot.py.dangerzone.db'
     perspective = None
+    perspective_default = None
     rowcount = 0
 
     def __init__(self, restore_file=None):
@@ -181,10 +182,6 @@ class Memory(object):
         self.db_create_tables()
         self.init_cardtypes()
         return
-
-    def set_perspective(self, playerid):
-        self.perspective = playerid
-        return playerid
 
     def get_players(self):
         self.execute("SELECT id FROM players")
@@ -554,7 +551,8 @@ def programloop():
 
 
         memory.init_facts()
-        memory.set_perspective(players[0].id)
+        memory.perspective_default = players[0].id
+        memory.perspective = players[0].id
 
         while True:
             try:
@@ -573,11 +571,17 @@ def gameloop(memory):
             return True
 
     elif action == "fact":
+        perspective_player = Player(memory, playername=display.ask("Fact from whose perspective?", [p.name for p in memory.get_players()]))
+        memory.perspective = perspective_player.id
+
         player = Player(memory, playername=display.ask("Fact about which player?", [p.name for p in memory.get_players()]))
         card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
         has_options = {"holding":True, "missing":False, "unknown":None}
         has = has_options[display.ask("What about the card?", list(has_options))]
         memory.add_fact(player, card, has, certainty=None)
+
+        memory.perspective = memory.perspective_default
+
 
 ### REAL EXECUTION
 
