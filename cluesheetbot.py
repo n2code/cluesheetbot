@@ -79,6 +79,7 @@ class Memory(object):
     real_file = 'cluesheetbot.py.dangerzone.db'
     perspective = None
     perspective_default = None
+    user = None
     rowcount = 0
 
     def __init__(self, restore_file=None):
@@ -156,11 +157,13 @@ class Memory(object):
         #A clue is an unresolved "player X holds one of these" from someone's perspective
         self.execute("""
         CREATE TABLE clues (
-            turn INTEGER PRIMARY KEY,
+            perspective INTEGER NOT NULL,
+            number INTEGER NOT NULL,
             player INTEGER NOT NULL,
-            card INTEGER NOT NULL,
+            lead INTEGER NOT NULL,
+            FOREIGN KEY(perspective) REFERENCES players(id),
             FOREIGN KEY(player) REFERENCES players(id),
-            FOREIGN KEY(card) REFERENCES cards(id)
+            FOREIGN KEY(lead) REFERENCES cards(id)
         )
         """)
 
@@ -180,7 +183,11 @@ class Memory(object):
         return Player(self, playername=name)
 
     def init_facts(self):
-        self.execute("INSERT INTO facts (perspective, player, card) SELECT p1.id, p2.id, c.id FROM players p1 JOIN players p2 JOIN cards c")
+        self.execute("""INSERT INTO facts (perspective, player, card)
+                            SELECT p1.id, p2.id, c.id
+                            FROM players p1
+                                JOIN players p2
+                                JOIN cards c""")
         return
 
     def db_setup(self):
@@ -200,19 +207,25 @@ class Memory(object):
         cards = [Card(self, cardid=row[0]) for row in rows]
         return cards
 
-    def add_fact(self, player, card, has, certainty=None):
-        if not self.perspective:
+    def add_fact(self, player, card, has, certainty=None, perspective=None):
+        if not perspective:
+            perspective = self.perspective
+        if not perspective:
             raise LookupError("No perspective set!")
         self.execute("""UPDATE facts SET has = ?, certainty = ?
                         WHERE perspective = ? AND player = ? AND card = ?""",
-                (has, certainty, self.perspective, player.id, card.id))
+                (has, certainty, perspective.id, player.id, card.id))
 
-    def add_clue(self, player, card, has, certainty=None):
-        if not self.perspective:
-            raise LookupError("No perspective set!")
-        self.execute("""UPDATE facts SET has = ?, certainty = ?
-                        WHERE perspective = ? AND player = ? AND card = ?""",
-                (has, certainty, self.perspective, player.id, card.id))
+    def add_clue(self, player, leads):
+        if len(leads) != 3:
+            raise AssertionError("Clue should contain three cards")
+        self.execute("""INSERT INTO clues (perspective, number, player, lead)
+                            WITH number (last) AS (SELECT IFNULL(MAX(number),0) FROM clues)
+                            SELECT p.id, (number.last+1), ?, leads.id
+                                FROM players p
+                                    JOIN number
+                                    JOIN (SELECT ? id UNION SELECT ? id UNION SELECT ? id) leads
+                     """, (player.id,)+tuple(c.id for c in leads))
 
     def next_player(self, current):
         players = self.get_players()
@@ -242,6 +255,8 @@ class Display:
     sheet_row = 2
     sheet_col = 2
     simbuffer = ""
+    recording = False
+    recordbuffer = ""
 
     def __init__(self):
         #self.clear_screen()
@@ -262,7 +277,7 @@ class Display:
                     (SELECT player, card, has, certainty FROM facts WHERE perspective = ?) fjoined
                     ON c.id = fjoined.card
                 ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC
-                """, (memory.perspective,))
+                """, (memory.perspective.id,))
         rows = memory.fetchall()
         card_names = [] #keep names separately to recall order
         cards = {}
@@ -295,7 +310,7 @@ class Display:
         prefix = ">>> " 
         self.print_at(self.prompt_row+0, self.prompt_col, self.question.ljust(self.prompt_width))
         inputline = prefix + self.userinput
-        self.print_at(self.prompt_row+1, self.prompt_col, inputline+"_".ljust(self.prompt_width))
+        self.print_at(self.prompt_row+1, self.prompt_col, (inputline+"_").ljust(self.prompt_width))
 
         if self.alert:
             reactionline = (len(prefix)*' ' + self.alert)
@@ -331,7 +346,11 @@ class Display:
                 ch = sys.stdin.read(1)
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
         #self.log("Getch received: "+str(ord(ch)))
+        if self.recording:
+            self.recordbuffer += ch
+
         if ord(ch) == 17: #Quit with Ctrl+Q
             raise SystemExit("fast quit")
         if ord(ch) == 3: #Quit command with Ctrl+C
@@ -511,6 +530,12 @@ class Display:
     def pick_player(self, memory, question):
         return Player(memory, playername=display.ask(question, [p.name for p in memory.get_players()]))
 
+    def pick_card(self, memory, question, cardtype=None):
+        cards = memory.get_cards()
+        if cardtype: #narrow down if type given
+            cards = [c for c in cards if c.type == cardtype.rstrip('s')]
+        return Card(memory, cardname=display.ask(question, [c.name for c in cards]))
+
 ### GAME FLOW ###
 
 #Initialization
@@ -577,8 +602,9 @@ def programloop():
 
 
         memory.init_facts()
-        memory.perspective_default = players[0].id
-        memory.perspective = players[0].id
+        memory.user = players[0]
+        memory.perspective_default = players[0]
+        memory.perspective = players[0]
 
         while True:
             try:
@@ -591,14 +617,14 @@ def gameloop(memory):
     display.print_board(memory)
     action = display.ask("", ["turn", "manual fact", "quit"])
     
-    def ask_perspective_ids():
+    def ask_perspectives():
         playernames = [p.name for p in memory.get_players()]
         perspective_input = display.ask("Recorded from whose perspective?", playernames+["all"])
         if perspective_input == "all":
             chosen = playernames
         else:
             chosen = [perspective_input]
-        return [Player(memory, playername=x).id for x in chosen]
+        return [Player(memory, playername=x) for x in chosen]
 
 
     if action == "quit":
@@ -612,17 +638,44 @@ def gameloop(memory):
         has_options = {"holding":True, "missing":False, "unknown":None}
         has = has_options[display.ask("What about the card?", list(has_options))]
 
-        for current_perspective in ask_perspective_ids():
-            memory.perspective = current_perspective
-            memory.add_fact(player, card, has, certainty=None)
-        memory.perspective = memory.perspective_default
+        for current_perspective in ask_perspectives():
+            memory.add_fact(player, card, has, certainty=None, perspective=current_perspective)
 
         display.log("Fact manually added.")
 
     elif action == "turn":
-        player = display.pick_player(memory, "Whose turn?")
-        display.log("Next is "+memory.next_player(player).name)
-        pass
+        player = display.pick_player(memory, "Whose turn?") #TODO auto detect
+        room = display.pick_card(memory, "Suggested room of the murder:", "room")
+        suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
+        weapon = display.pick_card(memory, "Suggested weapon:", "weapon")
+        leads = [room, suspect, weapon]
+
+        display.log(player.name+" is making a suggestion: \""+suspect.name.upper()+" did the deed in the "+room.name.upper()+" with the "+weapon.name.upper()+".\"")
+
+        interviewee = memory.next_player(player)
+        while interviewee != player:
+            display.log(interviewee.name+" is questioned...")
+
+            if display.ask("Can "+interviewee.name+" show a card?", ["show", "pass"]) == "show":
+
+                #if we are the inspector we gain plain facts...
+                if player == memory.user:
+                    shown = Card(memory, cardname=display.ask("Which card is shown to you?", [c.name for c in leads]))
+                    memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
+                    memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=interviewee)
+                #...but in any case everyone gets a clue
+                memory.add_clue(interviewee, leads)
+
+                display.log(interviewee.name+" shows "+player.name+" "+(shown.name.upper() if player == memory.user else "a card")+".")
+                
+            else: #cannot show so everyone gains facts
+                for inspector in memory.get_players():
+                    for lead in leads:
+                        memory.add_fact(interviewee, lead, has=False, certainty=1, perspective=inspector)
+
+                display.log(interviewee.name+" cannot show a card.")
+
+            interviewee = memory.next_player(interviewee)
 
 ### REAL EXECUTION
 
@@ -631,7 +684,7 @@ display.clear_screen()
 display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
 
 #debug:
-display.simulate_input("new,add,Niko,green,add,Tiki,red,add,Tobi,yellow,start,")
+display.simulate_input("new,add,Niko,green,add,Tiki,red,add,Tobi,yellow,start,turn,Niko,ballroom,red,candle,pass,show,red,")
 
 while True:
     try:
