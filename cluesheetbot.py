@@ -575,7 +575,7 @@ def programloop():
 
 def gameloop(memory):
     display.print_board(memory)
-    action = display.ask("", ["fact", "quit"])
+    action = display.ask("", ["turn", "manual fact", "quit"])
     
     def ask_perspective_ids():
         playernames = [p.name for p in memory.get_players()]
@@ -592,7 +592,7 @@ def gameloop(memory):
             display.log("You quit the game prematurely.")
             return True
 
-    elif action == "fact":
+    elif action == "manual fact":
         player = Player(memory, playername=display.ask("Fact about which player?", [p.name for p in memory.get_players()]))
         card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
         has_options = {"holding":True, "missing":False, "unknown":None}
@@ -605,6 +605,8 @@ def gameloop(memory):
 
         display.log("Fact manually added.")
 
+    elif action == "turn":
+        pass
 
 ### REAL EXECUTION
 
