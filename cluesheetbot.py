@@ -33,7 +33,7 @@ class DB(object):
 
 class Player(object):
     def __init__(self, memory, playerid=None, playername=None):
-        select = "SELECT id, porder, suspectcard, name FROM players "
+        select = "SELECT id, porder, suspectcard, number_of_cards, name FROM players "
         if playerid:
             memory.execute(select + "WHERE id = ?", (playerid,))
         elif playername:
@@ -46,7 +46,8 @@ class Player(object):
         self.id = rows[0][0]
         self.order = rows[0][1]
         self.suspectcard = Card(memory, rows[0][2])
-        self.name = rows[0][3]
+        self.number_of_cards = rows[0][3]
+        self.name = rows[0][4]
 
     def __eq__(self, other):
         return (isinstance(other, self.__class__)
@@ -80,6 +81,7 @@ class Memory(object):
     perspective = None
     perspective_default = None
     user = None
+    whose_turn = None
     rowcount = 0
 
     def __init__(self, restore_file=None):
@@ -134,6 +136,7 @@ class Memory(object):
             id INTEGER PRIMARY KEY,
             porder INTEGER NOT NULL,
             suspectcard INTEGER NOT NULL,
+            number_of_cards INTEGER NOT NULL,
             name TEXT NOT NULL,
             FOREIGN KEY(suspectcard) REFERENCES cards(id)
         )
@@ -179,7 +182,7 @@ class Memory(object):
         return Card(self, cardname=name)
 
     def new_player(self, name, suspectcard):
-        self.execute("INSERT INTO players (porder, suspectcard, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, ?)", (suspectcard.id, name,))
+        self.execute("INSERT INTO players (porder, suspectcard, number_of_cards, name) VALUES ((SELECT COUNT(*) FROM players) + 1, ?, 0, ?)", (suspectcard.id, name,))
         return Player(self, playername=name)
 
     def init_facts(self):
@@ -206,6 +209,11 @@ class Memory(object):
         rows = self.fetchall()
         cards = [Card(self, cardid=row[0]) for row in rows]
         return cards
+
+    def set_number_of_cards(self, player, number_of_cards):
+        self.execute("""UPDATE players SET number_of_cards = ? WHERE id = ?
+                     """, (number_of_cards, player.id))
+        player.number_of_cards = number_of_cards
 
     def add_fact(self, player, card, has, certainty=None, perspective=None):
         if not perspective:
@@ -579,6 +587,8 @@ def programloop():
 #        memory = Memory(restore_file=Memory.safety_file)
 
     elif action == "new game":
+
+        #Prepare database
         memory = Memory()
         memory.db_setup()
 
@@ -588,6 +598,7 @@ def programloop():
 
         display.log("#FILL(#)\nLet's prepare the game!\nAdd all players starting with you and proceeding clockwise. Commence the game when ready.")
 
+        #Add players with names and their pawns
         adding = True
         while adding:
             action = display.ask("", ["add player", "start game", "abort"])
@@ -601,7 +612,6 @@ def programloop():
                     display.alert = "Two players or more needed!"
                 else:
                     adding = False
-                    display.log("The game is on!")
 
             elif action == "add player":
                 name_pick = display.ask("Player name:")
@@ -623,10 +633,56 @@ def programloop():
                 display.log("Player "+str(len(players)+1)+": "+name_pick+" as "+suspect_pick)
 
 
+        #Register number of cards
+        players = memory.get_players()
+        while True:
+            players = memory.get_players()
+
+            for player in players:
+                while True:
+                    num_cards = display.ask("How many cards for "+player.name+"?")
+                    try:
+                        num_cards = int(num_cards)
+                        if num_cards > 0:
+                            break
+                        else:
+                            display.alert = "Enter a number greater than zero!"
+                    except ValueError as e:
+                        display.alert = "Enter a number!"
+                memory.set_number_of_cards(player, num_cards)
+                display.log(player.name+" holds "+str(num_cards)+" cards.")
+
+            num_cards_players = sum([p.number_of_cards for p in players])
+            num_cards_expected = len(memory.get_cards()) -3
+            if num_cards_players == num_cards_expected:
+                break
+            else:
+                display.log("Careful, players have "+str(num_cards_players)+" cards, "+str(num_cards_expected)+ " expected.")
+                if display.ask("Resolve conflict:", ["override", "repeat input"]) == "override":
+                    break
+
+        #Create blank facts
         memory.init_facts()
         memory.user = players[0]
+
+        #Default perspective is the user
         memory.perspective_default = players[0]
         memory.perspective = players[0]
+
+        #User's cards
+        display.log("Recording your cards...")
+        user_cardnames = []
+        for i in range(memory.user.number_of_cards):
+            card = Card(memory, cardname=display.ask("Which cards do you have? ("+str(i+1)+" of "+str(memory.user.number_of_cards)+")", [c.name for c in memory.get_cards() if c.name not in user_cardnames]))
+            user_cardnames += [card]
+            memory.add_fact(memory.user, card, has=True, certainty=1, perspective=memory.user)
+
+        #Determine where to start
+        display.log("Almost there...")
+        memory.whose_turn = display.pick_player(memory, "Who is starting?")
+        display.log(memory.whose_turn.name+" will start.")
+
+        display.log("The game is on!")
 
         while True:
             try:
@@ -672,8 +728,9 @@ def gameloop(memory):
             display.log("Fact manually added.")
 
     elif action == "turn":
-        display.log("#FILL(-)\n")
-        player = display.pick_player(memory, "Whose turn?") #TODO auto detect
+        display.log("#FILL(-)")
+        player = memory.whose_turn
+        display.log("Now it's "+player.name+"'s turn.")
         room = display.pick_card(memory, "Suggested room of the murder:", "room")
         suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
         weapon = display.pick_card(memory, "Suggested weapon:", "weapon")
@@ -706,6 +763,9 @@ def gameloop(memory):
                 display.log(interviewee.name+" cannot show a card.")
 
             interviewee = memory.next_player(interviewee)
+        
+        memory.whose_turn = memory.next_player(memory.whose_turn)
+
 
 ### REAL EXECUTION
 
