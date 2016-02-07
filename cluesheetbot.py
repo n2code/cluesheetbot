@@ -48,6 +48,13 @@ class Player(object):
         self.suspectcard = Card(memory, rows[0][2])
         self.name = rows[0][3]
 
+    def __eq__(self, other):
+        return (isinstance(other, self.__class__)
+            and self.id == other.id)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
 
 class Card(object):
     def __init__(self, memory, cardid=None, cardname=None):
@@ -182,7 +189,7 @@ class Memory(object):
         return
 
     def get_players(self):
-        self.execute("SELECT id FROM players")
+        self.execute("SELECT id FROM players ORDER BY porder ASC")
         rows = self.fetchall()
         players = [Player(self, playerid=row[0]) for row in rows]
         return players
@@ -206,6 +213,11 @@ class Memory(object):
         self.execute("""UPDATE facts SET has = ?, certainty = ?
                         WHERE perspective = ? AND player = ? AND card = ?""",
                 (has, certainty, self.perspective, player.id, card.id))
+
+    def next_player(self, current):
+        players = self.get_players()
+        return players[(players.index(current)+1)%len(players)]
+
 
 class Display:
     csi = "\033["
@@ -496,6 +508,8 @@ class Display:
         self.print_at(self.title_row, self.title_col, ".::*** ClueSheetBot 2000 ***::.")
         return
 
+    def pick_player(self, memory, question):
+        return Player(memory, playername=display.ask(question, [p.name for p in memory.get_players()]))
 
 ### GAME FLOW ###
 
@@ -593,7 +607,7 @@ def gameloop(memory):
             return True
 
     elif action == "manual fact":
-        player = Player(memory, playername=display.ask("Fact about which player?", [p.name for p in memory.get_players()]))
+        player = display.pick_player(memory, "Fact about which player?")
         card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
         has_options = {"holding":True, "missing":False, "unknown":None}
         has = has_options[display.ask("What about the card?", list(has_options))]
@@ -606,6 +620,8 @@ def gameloop(memory):
         display.log("Fact manually added.")
 
     elif action == "turn":
+        player = display.pick_player(memory, "Whose turn?")
+        display.log("Next is "+memory.next_player(player).name)
         pass
 
 ### REAL EXECUTION
