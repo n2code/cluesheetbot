@@ -315,7 +315,7 @@ class Display:
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         if ord(ch) == 17: #Quit with Ctrl+Q
-            raise KeyboardInterrupt("Fast quit. Bye!")
+            raise SystemExit("fast quit")
         return ch
 
     def ask(self, question, possible=None): #if possible given: allowed answers
@@ -498,9 +498,7 @@ def programloop():
     action = display.ask("", ["new game", "load backup", "exit"])
 
     if action == "exit":
-        display.clear_screen()
-        print("\nBye!")
-        sys.exit()
+        return True
 
     elif action == "load backup":
         memory = Memory(restore_file=Memory.safety_file)
@@ -550,11 +548,29 @@ def programloop():
 
         memory.game_setup()
         memory.perspective = 1
-        display.print_board(memory)
 
         while True:
-            answer = display.ask("Select anything:", [c.name for c in memory.get_cards()])
-            display.log("Your selection was "+answer+".")
+            try:
+                if gameloop(memory):
+                    return True
+            except KeyboardInterrupt as e:
+                display.log("Panic-exit from current command.")
+
+def gameloop(memory):
+    display.print_board(memory)
+    action = display.ask("", ["fact", "quit"])
+
+    if action == "quit":
+        if display.ask("Really quit the running game?", ["yes", "no", "cancel"]) == "yes":
+            display.log("You quit the game prematurely.")
+            return True
+
+    elif action == "fact":
+        player = Player(memory, playername=display.ask("Fact about which player?", [p.name for p in memory.get_players()]))
+        card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
+        has_options = {"holding":True, "missing":False, "unknown":None}
+        has = has_options[display.ask("What about the card?", list(has_options))]
+        memory.add_fact(player, card, has, certainty=None)
 
 ### REAL EXECUTION
 
@@ -564,8 +580,11 @@ display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to
 
 while True:
     try:
-        programloop()
-    except KeyboardInterrupt as e:
+        if programloop():
+            display.clear_screen()
+            print("\nBye!")
+            break
+    except SystemExit as e:
         display.clear_screen()
         print("Fast quit... bye!")
         sys.exit()
