@@ -182,10 +182,6 @@ class Memory(object):
         self.init_cardtypes()
         return
 
-    def game_setup(self):
-        self.init_facts()
-        return
-
     def set_perspective(self, playerid):
         self.perspective = playerid
         return playerid
@@ -203,6 +199,7 @@ class Memory(object):
         return cards
 
     def add_fact(self, player, card, has, certainty=None):
+        display.log("add with persp "+str(self.perspective))
         if not self.perspective:
             raise LookupError("No perspective set!")
         self.execute("""UPDATE facts SET has = ?, certainty = ?
@@ -314,8 +311,11 @@ class Display:
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        #self.log("Getch received: "+str(ord(ch)))
         if ord(ch) == 17: #Quit with Ctrl+Q
             raise SystemExit("fast quit")
+        if ord(ch) == 3: #Quit command with Ctrl+C
+            raise KeyboardInterrupt("panic abort")
         return ch
 
     def ask(self, question, possible=None): #if possible given: allowed answers
@@ -372,6 +372,13 @@ class Display:
                 self.userinput = ""
             elif char == 127: #Delete... deletes one character
                 self.userinput = self.userinput[:-1]
+            elif char == 63: #? prints all commands
+                if self.possible:
+                    self.log("Commands currently available:")
+                    self.log("\n".join(["   "+x for x in self.possible]))
+                else:
+                    self.alert = "This is a freestyle prompt!"
+                    continue
             elif char == 13:
                 self.userinput = self.userinput.strip()
                 if not self.userinput:
@@ -546,15 +553,15 @@ def programloop():
                 display.log("Player "+str(len(playernames)+1)+": "+name_pick+" as "+suspect_pick)
 
 
-        memory.game_setup()
-        memory.perspective = 1
+        memory.init_facts()
+        memory.set_perspective(players[0].id)
 
         while True:
             try:
                 if gameloop(memory):
                     return True
             except KeyboardInterrupt as e:
-                display.log("Panic-exit from current command.")
+                display.log("Panic abort from current command.")
 
 def gameloop(memory):
     display.print_board(memory)
@@ -576,7 +583,7 @@ def gameloop(memory):
 
 display = Display()
 display.clear_screen()
-display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options and ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. CTRL+Q exits immediately.")
+display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
 
 while True:
     try:
@@ -584,7 +591,7 @@ while True:
             display.clear_screen()
             print("\nBye!")
             break
-    except SystemExit as e:
+    except (SystemExit, KeyboardInterrupt) as e:
         display.clear_screen()
         print("Fast quit... bye!")
         sys.exit()
