@@ -283,7 +283,7 @@ class Memory(object):
 
         #FACT BASED DEDUCTIONS
 
-        #Ying-and-Yang (column based hold-or-not-hold deduction)
+        #Romeo-and-Julia (column based hold-or-not-hold deduction)
         self.execute("""
             WITH
                 plan_raw (perspective, player, has_known, has_target, certainty) AS
@@ -352,6 +352,50 @@ class Memory(object):
         """)
         self.execute("SELECT CHANGES()")
         changes += self.fetchall()[0][0]
+
+        #Whats-in-box-?!?!? (if you know who holds all weapons but one...)
+        self.execute("""
+            WITH
+                onemissing (perspective, type, certainty) AS
+                    (SELECT f.perspective, c.type, AVG(f.certainty)
+                        FROM facts f
+                            JOIN cards c
+                                ON f.card = c.id
+                            JOIN (SELECT count(type) num, type FROM cards GROUP BY type) cstats
+                                ON c.type = cstats.type
+                        WHERE f.has = 1
+                        GROUP BY f.perspective, f.has, c.type
+                        HAVING COUNT(f.card) = cstats.num - 1),
+                nobodyknows (perspective, card, type) AS
+                    (SELECT f.perspective, f.card, c.type
+                        FROM facts f
+                            JOIN cards c
+                                ON f.card = c.id
+                        GROUP BY f.perspective, f.card
+                        HAVING MAX(IFNULL(f.has, 0)) = 0),
+                plan (perspective, card, certainty) AS
+                    (SELECT om.perspective, nk.card, om.certainty
+                        FROM onemissing om
+                            INNER JOIN nobodyknows nk
+                                ON om.perspective = nk.perspective
+                                    AND om.type = nk.type)
+            UPDATE facts
+                SET has = 0,
+                    certainty =
+                    (SELECT certainty FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.card = plan.card)
+                WHERE EXISTS
+                    (SELECT 42 FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.card = plan.card
+                            AND facts.has IS NULL)
+        """)
+        self.execute("SELECT CHANGES()")
+        changes += self.fetchall()[0][0]
+
+        #CLUE-BASED DEDUCTIONS
+        #TODO
 
         return changes
 
