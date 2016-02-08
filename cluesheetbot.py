@@ -7,9 +7,11 @@ class DB(object):
         self.dbname = dbname
 
         try:
-            os.remove(self.dbname)
+            if os.path.isfile(self.dbname):
+                os.remove(self.dbname)
         except OSError:
-            pass
+            print("Sorry, unable to access database file.")
+            raise
         if clone_from:
             shutil.copy2(clone_from, self.dbname)
 
@@ -25,10 +27,9 @@ class DB(object):
     def get_rowcount(self):
         return self.cursor.rowcount
 
-    def destroy(self):
+    def __del__(self):
         self.dbconn.close()
-        #os.remove(self.dbname)
-        return
+        os.remove(self.dbname)
 
 
 class Player(object):
@@ -75,7 +76,7 @@ class Card(object):
 
 
 class Memory(object):
-    real_file = 'cluesheetbot.py.dangerzone.db'
+    real_file = 'cluesheetbot.db.tmp'
     perspective = None
     perspective_default = None
     user = None
