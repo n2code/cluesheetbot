@@ -286,19 +286,41 @@ class Memory(object):
                     (SELECT plan.has_target FROM plan
                         WHERE facts.perspective = plan.perspective
                             AND facts.player = plan.player
-                            AND (facts.has IS NULL OR facts.has = plan.has_target))
-                    , certainty =
+                            AND (facts.has IS NULL OR facts.has = plan.has_target)),
+                    certainty =
                     (SELECT MAX(plan.certainty, IFNULL(facts.certainty, 0.0)) FROM plan
                         WHERE facts.perspective = plan.perspective
                             AND facts.player = plan.player
                             AND (facts.has IS NULL OR facts.has = plan.has_target))
                 WHERE EXISTS
-                    (SELECT * FROM plan
+                    (SELECT 42 FROM plan
                         WHERE facts.perspective = plan.perspective
                             AND facts.player = plan.player
                             AND (facts.has IS NULL OR facts.has = plan.has_target))
         """)
 
+        #Highlander (there can be only one player who holds a card)
+        self.execute("""
+            WITH plan (perspective, card, poorplayer, certainty) AS
+                (SELECT fhas.perspective, fhas.card, fhasnot.player, MAX(IFNULL(fhas.certainty, 0.0), IFNULL(fhasnot.certainty, 0.0))
+                    FROM facts fhas
+                        JOIN facts fhasnot
+                        ON fhas.card = fhasnot.card
+                            AND fhas.perspective = fhasnot.perspective
+                    WHERE fhas.has = 1 AND fhasnot.has IS NULL)
+            UPDATE facts
+                SET has = 0,
+                    certainty =
+                    (SELECT certainty FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.player = plan.poorplayer
+                            AND facts.card = plan.card)
+                WHERE EXISTS
+                    (SELECT 42 FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.player = plan.poorplayer
+                            AND facts.card = plan.card);
+        """)
         return
 
 
