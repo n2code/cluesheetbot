@@ -149,7 +149,7 @@ class Memory(object):
             player INTEGER NOT NULL,
             card INTEGER NOT NULL,
             has INTEGER DEFAULT NULL,
-            certainty INTEGER DEFAULT NULL,
+            certainty REAL DEFAULT NULL,
             likely INTEGER DEFAULT 0,
             FOREIGN KEY(perspective) REFERENCES players(id),
             FOREIGN KEY(player) REFERENCES players(id),
@@ -251,6 +251,55 @@ class Memory(object):
         rows = self.fetchall()
         assert len(rows) == 1
         return (rows[0][0], rows[0][1])
+
+    def run_deductions(self):
+        players = self.get_players()
+        cards = self.get_cards()
+
+        #FACT BASED DEDUCTIONS
+
+        #Ying-and-Yang (column based hold-or-not-hold deduction)
+        self.execute("""
+            WITH plan_raw (perspective, player, has_known, has_target, certainty) AS
+                (WITH allcards (num) AS
+                        (SELECT COUNT(*) FROM cards),
+                    cardlimits (player, has, maxcards) AS
+                        (SELECT id, 1, number_of_cards FROM players
+                         UNION SELECT id, 0, ((SELECT num FROM allcards) - number_of_cards) FROM players),
+                    playercardstats (perspective, player, has, numcards, certainsum) AS 
+                        (SELECT perspective, player, has, COUNT(card), TOTAL(certainty)
+                            FROM facts
+                            GROUP BY perspective, player, has)
+                SELECT s.perspective, s.player, s.has, NOT s.has, (1.0 * s.certainsum / s.numcards)
+                    FROM playercardstats s
+                        INNER JOIN cardlimits c
+                        ON s.player = c.player AND s.has = c.has
+                    WHERE s.numcards = c.maxcards),
+                plan (perspective, player, has_known, has_target, certainty) AS
+                    (SELECT * FROM plan_raw a
+                        WHERE NOT EXISTS
+                            (SELECT 1 FROM plan_raw b
+                                WHERE a.perspective = b.perspective AND a.player = b.player
+                                AND a.has_known = NOT b.has_known))
+            UPDATE facts
+                SET has =
+                    (SELECT plan.has_target FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.player = plan.player
+                            AND (facts.has IS NULL OR facts.has = plan.has_target))
+                    , certainty =
+                    (SELECT MAX(plan.certainty, IFNULL(facts.certainty, 0.0)) FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.player = plan.player
+                            AND (facts.has IS NULL OR facts.has = plan.has_target))
+                WHERE EXISTS
+                    (SELECT * FROM plan
+                        WHERE facts.perspective = plan.perspective
+                            AND facts.player = plan.player
+                            AND (facts.has IS NULL OR facts.has = plan.has_target))
+        """)
+
+        return
 
 
 class Display:
@@ -718,6 +767,7 @@ def programloop():
                 display.log("Panic abort from current command.")
 
 def gameloop(memory):
+    memory.run_deductions()
     display.print_board(memory)
     action = display.ask("", ["turn", "skip", "database", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
