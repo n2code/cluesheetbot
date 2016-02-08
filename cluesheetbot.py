@@ -75,8 +75,6 @@ class Card(object):
 
 
 class Memory(object):
-    forecasting = False
-    safety_file = 'cluesheetbot.py.backup.db'
     real_file = 'cluesheetbot.py.dangerzone.db'
     perspective = None
     perspective_default = None
@@ -85,33 +83,17 @@ class Memory(object):
     rowcount = 0
     undo_available = False
 
-    def __init__(self, restore_file=None):
-        if restore_file:
-            raise NotImplementedError("restore not coded yet")
-        else:
-            self.backup_brain = DB(self.safety_file)
-            self.real_brain = DB(self.real_file)
+    def __init__(self):
+        self.real_brain = DB(self.real_file)
         return
 
     def execute(self, query, vals=()):
-        if not self.forecasting:
-            self.backup_brain.execute(query, vals)
         result = self.real_brain.execute(query, vals)
         self.rowcount = self.real_brain.get_rowcount()
         return result
 
     def fetchall(self):
         return self.real_brain.fetchall()
-
-    def start_forecast(self):
-        forecasting = True
-        return
-
-    def forget_future(self):
-        self.real_brain.destroy()
-        self.real_brain = DB(real_file, safety_file) #Clone from backup.
-        forecasting = False
-        return
 
     def db_create_tables(self):
         #The three card types
@@ -770,9 +752,6 @@ def programloop():
 
     if action == "exit":
         return True
-
-#    elif action == "load backup":
-#        memory = Memory(restore_file=Memory.safety_file)
 
     elif action == "new game":
 
