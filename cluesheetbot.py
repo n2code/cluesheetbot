@@ -1,5 +1,5 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
-import sqlite3, os, shutil, string, re, datetime, traceback
+import sqlite3, os, shutil, string, re, datetime, random, traceback
 import sys, tty, termios
 
 class DB(object):
@@ -266,7 +266,7 @@ class Memory(object):
                     cardlimits (player, has, maxcards) AS
                         (SELECT id, 1, number_of_cards FROM players
                          UNION SELECT id, 0, ((SELECT num FROM allcards) - number_of_cards) FROM players),
-                    playercardstats (perspective, player, has, numcards, certainsum) AS 
+                    playercardstats (perspective, player, has, numcards, certainsum) AS
                         (SELECT perspective, player, has, COUNT(card), TOTAL(certainty)
                             FROM facts
                             GROUP BY perspective, player, has)
@@ -327,6 +327,7 @@ class Display:
     simbuffer = ""
     recording = True
     recordbuffer = ""
+    randseed = ""
 
     def __init__(self):
         #self.clear_screen()
@@ -666,6 +667,7 @@ def programloop():
         #Prepare database
         memory = Memory()
         memory.db_setup()
+        display.randseed = ""
 
         for cardtype in cards["names"]:
             for cardname in cards["names"][cardtype]:
@@ -706,6 +708,7 @@ def programloop():
 
                 memory.new_player(name_pick, suspectcard)
                 display.log("Player "+str(len(players)+1)+": "+name_pick+" as "+suspect_pick)
+                display.randseed += name_pick+suspect_pick
 
 
         #Register number of cards
@@ -751,11 +754,15 @@ def programloop():
             card = Card(memory, cardname=display.ask("Which cards do you have? ("+str(i+1)+" of "+str(memory.user.number_of_cards)+")", [c.name for c in memory.get_cards() if c.name not in user_cardnames]))
             user_cardnames += [card]
             memory.add_fact(memory.user, card, has=True, certainty=1, perspective=memory.user)
+            display.randseed += card.name
 
         #Determine where to start
         display.log("Almost there...")
         memory.whose_turn = display.pick_player(memory, "Who is starting?")
         display.log(memory.whose_turn.name+" will start.")
+
+        #Reproducable randomness if same players with same pawns and same cards recorded by user in same order
+        random.seed(display.randseed, version=2)
 
         display.log("The game is on!")
 
