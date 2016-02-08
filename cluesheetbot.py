@@ -871,8 +871,8 @@ def programloop():
 
 def gameloop(memory):
     display.refresh(memory, deduce=True)
-    action = display.ask("", ["turn", "skip"]+(["undo"] if memory.undo_available else [])+["database", "refresh", "quit"])
-    display.save_recording("autosave.sav", inform_user=False)
+    display.save_recording("autosave_replay.sav", inform_user=False)
+    action = display.ask("", ["turn", "skip"]+(["undo"] if memory.undo_available else [])+["database", "refresh", "exit"])
 
     def ask_perspectives():
         playernames = [p.name for p in memory.get_players()]
@@ -884,9 +884,9 @@ def gameloop(memory):
         return [Player(memory, playername=x) for x in chosen]
 
 
-    if action == "quit":
-        if display.ask("Really quit the running game?", ["yes", "cancel"]) == "yes":
-            display.log("You quit the game prematurely.")
+    if action == "exit":
+        if display.ask("To leave the game type exactly EXIT:") == "EXIT":
+            display.log("You left the game prematurely.")
             return True
 
     elif action == "undo":
