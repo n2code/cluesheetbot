@@ -253,6 +253,29 @@ class Memory(object):
         return (rows[0][0], rows[0][1])
 
     def run_deductions(self):
+        total_changes = 0
+        changes = None
+        cycles = 0
+
+        while changes != 0:
+            cycles += 1
+            changes = self.deduce()
+            total_changes += changes
+            if cycles > 99:
+                #I got 99 problems but an infinite loop ain't one
+                display.log("Deduction engine just escaped from a singularity...")
+                break
+        cycles -= 1 #because the last one was futile
+
+        if cycles > 1:
+            display.log("Deduction engine used %i cycles!" % cycles)
+
+        if total_changes:
+            display.log("Deduced %i new fact(s)." % total_changes)
+        return total_changes
+
+
+    def deduce(self):
         players = self.get_players()
         cards = self.get_cards()
         changes = 0
@@ -804,9 +827,7 @@ def programloop():
                 display.log("Panic abort from current command.")
 
 def gameloop(memory):
-    newfacts = memory.run_deductions()
-    if newfacts:
-        display.log("[Deducted %i new fact(s).]" % newfacts)
+    memory.run_deductions()
     display.print_board(memory)
     action = display.ask("", ["turn", "skip", "database", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
