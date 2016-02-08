@@ -716,7 +716,9 @@ class Display:
             cards = [c for c in cards if c.type == cardtype.rstrip('s')]
         return Card(memory, cardname=display.ask(question, [c.name for c in cards]))
 
-    def refresh(self, memory):
+    def refresh(self, memory, deduce=False):
+        if deduce:
+            memory.run_deductions()
         self.clear_screen()
         self.update_kpis()
         self.update_log()
@@ -867,8 +869,7 @@ def programloop():
                 display.log("Panic abort from current command.")
 
 def gameloop(memory):
-    memory.run_deductions()
-    display.print_board(memory)
+    display.refresh(memory, deduce=True)
     action = display.ask("", ["turn", "skip"]+(["undo"] if memory.undo_available else [])+["database", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
 
@@ -899,11 +900,11 @@ def gameloop(memory):
             display.log("Aborted undo.\n#FILL(#)")
 
     elif action == "refresh":
-        display.log("Manual screen+memory refresh.")
-        display.refresh(memory)
+        display.log("Manual screen refresh.")
+        display.refresh(memory, deduce=False)
 
     elif action == "database":
-        override = display.ask("DANGER! Manually alter memory?", ["fact", "clue", "deduce", "cancel"])
+        override = display.ask("DANGER ZONE! Manually alter database?", ["fact", "clue", "commit", "cancel"])
 
         if override == "fact":
             player = display.pick_player(memory, "Fact about which player?")
@@ -914,14 +915,20 @@ def gameloop(memory):
             for current_perspective in ask_perspectives():
                 memory.add_fact(player, card, has, certainty=None, perspective=current_perspective)
 
-            display.log("Fact database updated.")
+            display.log("Fact table updated.")
 
         elif override == "clue":
-            raise NotImplementedError("TODO")
+            display.log("Not implemented yet :(")
+            #raise NotImplementedError("manually add clue") #TODO
 
-        elif override == "deduce":
-            display.log("Triggering deductions...")
-            memory.run_deductions()
+        elif override == "commit":
+            if display.ask("Commit and delete undo savepoint?", ["yes", "cancel"]) == "yes":
+                if memory.undo_savepoint_exists:
+                    memory.execute("RELEASE SAVEPOINT undoturn")
+                    memory.undo_savepoint_exists, memory.undo_available = False, False
+                    display.log("Committed all data.")
+                else:
+                    display.log("There is no undo savepoint which could be committed.")
 
     elif action == "skip":
         if display.ask("Really skip %s's turn?" % memory.whose_turn.name, ["yes", "no"]) == "yes":
@@ -1001,6 +1008,7 @@ def gameloop(memory):
                     display.log("%s cannot show a card." % interviewee.name)
 
                 interviewee = memory.next_player(interviewee)
+                display.refresh(memory, deduce=True)
 
             memory.whose_turn = memory.next_player(memory.whose_turn)
             display.log("%s will be next." % memory.whose_turn.name)
