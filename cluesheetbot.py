@@ -81,6 +81,7 @@ class Memory(object):
     user = None
     whose_turn = None
     rowcount = 0
+    undo_savepoint_exists = False
     undo_available = False
 
     def __init__(self):
@@ -856,7 +857,7 @@ def programloop():
         random.seed(display.randseed, version=2)
 
         display.log("The game is on!")
-        memory.undo_available = False
+        memory.undo_available, memory.undo_savepoint_exists = False, False
 
         while True:
             try:
@@ -889,9 +890,9 @@ def gameloop(memory):
     elif action == "undo":
         display.log("#FILL(#)\nYou can time travel back to the point right before you started your last turn.")
         if display.ask("Undo one and only one turn?", ["yes", "cancel"]) == "yes":
-            memory.execute("ROLLBACK TO SAVEPOINT turnstart")
-            memory.execute("RELEASE SAVEPOINT turnstart")
-            memory.undo_available = False
+            memory.execute("ROLLBACK TO SAVEPOINT undoturn")
+            memory.execute("RELEASE SAVEPOINT undoturn")
+            memory.undo_available, memory.undo_savepoint_exists = False, False
             display.log("Summoning TARDIS, reverting changes...\n#FILL(#)")
             return
         else:
@@ -928,79 +929,91 @@ def gameloop(memory):
             display.log("Skipping player, %s will be next." % memory.whose_turn.name)
 
     elif action == "turn":
-        if memory.undo_available:
-            memory.execute("RELEASE SAVEPOINT turnstart")
-        memory.execute("SAVEPOINT turnstart")
-        memory.undo_available = True
+        if memory.undo_savepoint_exists:
+            memory.execute("RELEASE SAVEPOINT undoturn")
+        memory.execute("SAVEPOINT undoturn")
+        memory.undo_savepoint_exists = True
 
         display.log("#FILL(-)")
         player = memory.whose_turn
         butler = Recommender(memory)
 
-        if player == memory.user:
-            display.log("Now it's your turn.")
-            (room, suspect, weapon) = butler.pick_leads()
-        else:
-            display.log("Now it's %s's turn." % player.name)
-            room = display.pick_card(memory, "Suggested room of the murder:", "room")
-            suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
-            weapon = display.pick_card(memory, "Suggested weapon:", "weapon")
-        leads = [room, suspect, weapon]
+        memory.execute("SAVEPOINT turn")
+        try:
+            if player == memory.user:
+                display.log("Now it's your turn.")
+                (room, suspect, weapon) = butler.pick_leads()
+            else:
+                display.log("Now it's %s's turn." % player.name)
+                room = display.pick_card(memory, "Suggested room of the murder:", "room")
+                suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
+                weapon = display.pick_card(memory, "Suggested weapon:", "weapon")
+            leads = [room, suspect, weapon]
 
-        display.log("%s suggests: \"%s did the deed in the %s with the %s.\""
-                    % (player.name, suspect.name.upper(), room.name.upper(), weapon.name.upper()))
-        interviewee = memory.next_player(player)
-        while interviewee != player:
-            display.log(interviewee.name+" is questioned...")
+            display.log("%s suggests: \"%s did the deed in the %s with the %s.\""
+                        % (player.name, suspect.name.upper(), room.name.upper(), weapon.name.upper()))
+            interviewee = memory.next_player(player)
+            while interviewee != player:
+                display.log(interviewee.name+" is questioned...")
 
-            if interviewee == memory.user: #user is asked
-                holding = [lead for lead in leads if memory.has_card(interviewee, lead, interviewee)[0]]
-                if holding:
-                    can_show = True
-                else:
-                    display.ask("You have to pass, you hold none!", ["pass"])
-                    can_show= False
+                if interviewee == memory.user: #user is asked
+                    holding = [lead for lead in leads if memory.has_card(interviewee, lead, interviewee)[0]]
+                    if holding:
+                        can_show = True
+                    else:
+                        display.ask("You have to pass, you hold none!", ["pass"])
+                        can_show= False
 
-            else: #other player is asked
-                can_show = (display.ask("Can %s show a card?" % interviewee.name, ["show", "pass"]) == "show")
+                else: #other player is asked
+                    can_show = (display.ask("Can %s show a card?" % interviewee.name, ["show", "pass"]) == "show")
 
-            if can_show:
-                #if we are the inspector we gain plain facts...
-                if player == memory.user:
-                    shown_possible = [lead.name for lead in leads if (memory.has_card(interviewee, lead, player)[0] != False)]
-                    if not shown_possible:
-                        display.log("%s should not be able to show a card..." % interviewee.name)
-                        display.ask("This seems impossible...", ["retry"])
-                        continue
-                    shown = Card(memory, cardname=display.ask("Which card is shown to you?", shown_possible))
-                    memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
-                    memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=interviewee)
-                    display.log("%s shows you %s." % (interviewee.name, shown.name.upper()))
-                #if we are interviewed we know who knows more...
-                elif interviewee == memory.user:
-                    shown = butler.pick_answer(holding)
-                    memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
-                    display.log("You show %s %s." % (player.name, shown.name.upper()))
-                else:
-                    display.log("%s shows %s a card." % (interviewee.name, player.name))
+                if can_show:
+                    #if we are the inspector we gain plain facts...
+                    if player == memory.user:
+                        shown_possible = [lead.name for lead in leads if (memory.has_card(interviewee, lead, player)[0] != False)]
+                        if not shown_possible:
+                            display.log("%s should not be able to show a card..." % interviewee.name)
+                            display.ask("This seems impossible...", ["retry"])
+                            continue
+                        shown = Card(memory, cardname=display.ask("Which card is shown to you?", shown_possible))
+                        memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
+                        memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=interviewee)
+                        display.log("%s shows you %s." % (interviewee.name, shown.name.upper()))
+                    #if we are interviewed we know who knows more...
+                    elif interviewee == memory.user:
+                        shown = butler.pick_answer(holding)
+                        memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
+                        display.log("You show %s %s." % (player.name, shown.name.upper()))
+                    else:
+                        display.log("%s shows %s a card." % (interviewee.name, player.name))
 
-                #...but in any case everyone gets a clue
-                memory.add_clue(interviewee, leads)
+                    #...but in any case everyone gets a clue
+                    memory.add_clue(interviewee, leads)
 
 
-                break #turn ends when someone can show
+                    break #turn ends when someone can show
 
-            else: #cannot show so everyone gains facts
-                for inspector in memory.get_players():
-                    for lead in leads:
-                        memory.add_fact(interviewee, lead, has=False, certainty=1, perspective=inspector)
+                else: #cannot show so everyone gains facts
+                    for inspector in memory.get_players():
+                        for lead in leads:
+                            memory.add_fact(interviewee, lead, has=False, certainty=1, perspective=inspector)
 
-                display.log("%s cannot show a card." % interviewee.name)
+                    display.log("%s cannot show a card." % interviewee.name)
 
-            interviewee = memory.next_player(interviewee)
+                interviewee = memory.next_player(interviewee)
 
-        memory.whose_turn = memory.next_player(memory.whose_turn)
-        display.log("%s will be next." % memory.whose_turn.name)
+            memory.whose_turn = memory.next_player(memory.whose_turn)
+            display.log("%s will be next." % memory.whose_turn.name)
+
+            memory.execute("RELEASE SAVEPOINT turn")
+        except KeyboardInterrupt as e:
+            memory.execute("ROLLBACK TO SAVEPOINT turn")
+            memory.execute("RELEASE SAVEPOINT turn")
+            display.log("Turn aborted, no changes persisted.")
+            raise
+
+        memory.undo_available = True
+
 
     pass #always reached unless KeyboardInterrupt or turn undo - but no break or continue bullshit otherwise
 
