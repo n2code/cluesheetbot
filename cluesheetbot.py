@@ -216,10 +216,7 @@ class Memory(object):
         player.number_of_cards = number_of_cards
 
     def add_fact(self, player, card, has, certainty=None, perspective=None):
-        if not perspective:
-            perspective = self.perspective
-        if not perspective:
-            raise LookupError("No perspective set!")
+        perspective = self.assure_perspective(perspective)
         self.execute("""UPDATE facts SET has = ?, certainty = ?
                         WHERE perspective = ? AND player = ? AND card = ?""",
                 (has, certainty, perspective.id, player.id, card.id))
@@ -238,6 +235,22 @@ class Memory(object):
     def next_player(self, current):
         players = self.get_players()
         return players[(players.index(current)+1)%len(players)]
+
+    def assure_perspective(self, perspective):
+        if not perspective:
+            perspective = self.perspective
+        if not perspective:
+            raise LookupError("No perspective set!")
+        else:
+            return perspective
+
+    def has_card(self, player, card, perspective=None):
+        perspective = self.assure_perspective(perspective)
+        self.execute("""SELECT has, certainty FROM facts WHERE perspective = ? AND player = ? AND card = ?""",
+                        (perspective.id, player.id, card.id))
+        rows = self.fetchall()
+        assert len(rows) == 1
+        return (rows[0][0], rows[0][1])
 
 
 class Display:
@@ -565,6 +578,19 @@ class Display:
         self.update_prompt()
         self.print_board(memory)
 
+class Recommender:
+    def __init__(self, memory):
+        self.memory = memory
+
+    def pick_leads(self):
+        room = display.pick_card(self.memory, "Pick a room:", "room")
+        suspect = display.pick_card(self.memory, "Pick a suspect:", "suspect")
+        weapon = display.pick_card(self.memory, "Pick a weapon:", "weapon")
+        return (room, suspect, weapon)
+
+    def pick_answer(self, holds):
+        return Card(self.memory, cardname=display.ask("Which card do you show?", [c.name for c in holds]))
+
 ### GAME FLOW ###
 
 #Initialization
@@ -716,7 +742,7 @@ def gameloop(memory):
         display.refresh(memory)
 
     elif action == "manual fact":
-        if display.ask("Override mechanics and manually enter fact?", ["override", "cancel"]) == "override":
+        if display.ask("Ignore mechanics & manually add fact?", ["override", "cancel"]) == "override":
             player = display.pick_player(memory, "Fact about which player?")
             card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
             has_options = {"holding":True, "missing":False, "unknown":None}
@@ -730,29 +756,59 @@ def gameloop(memory):
     elif action == "turn":
         display.log("#FILL(-)")
         player = memory.whose_turn
-        display.log("Now it's "+player.name+"'s turn.")
-        room = display.pick_card(memory, "Suggested room of the murder:", "room")
-        suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
-        weapon = display.pick_card(memory, "Suggested weapon:", "weapon")
+        butler = Recommender(memory)
+
+        if player == memory.user:
+            display.log("Now it's your turn.")
+            (room, suspect, weapon) = butler.pick_leads()
+        else:
+            display.log("Now it's %s's turn." % player.name)
+            room = display.pick_card(memory, "Suggested room of the murder:", "room")
+            suspect = display.pick_card(memory, "Suggested suspect:", "suspect")
+            weapon = display.pick_card(memory, "Suggested weapon:", "weapon")
         leads = [room, suspect, weapon]
 
-        display.log(player.name+" is making a suggestion: \""+suspect.name.upper()+" did the deed in the "+room.name.upper()+" with the "+weapon.name.upper()+".\"")
-
+        display.log("%s suggests: \"%s did the deed in the %s with the %s.\""
+                    % (player.name, suspect.name.upper(), room.name.upper(), weapon.name.upper()))
         interviewee = memory.next_player(player)
         while interviewee != player:
             display.log(interviewee.name+" is questioned...")
 
-            if display.ask("Can "+interviewee.name+" show a card?", ["show", "pass"]) == "show":
+            if interviewee == memory.user: #user is asked
+                holding = [lead for lead in leads if memory.has_card(interviewee, lead, interviewee)[0]]
+                if holding:
+                    can_show = True
+                else:
+                    display.ask("You have to pass, you hold none!", ["pass"])
+                    can_show= False
 
+            else: #other player is asked
+                can_show = (display.ask("Can %s show a card?" % interviewee.name, ["show", "pass"]) == "show")
+
+            if can_show:
                 #if we are the inspector we gain plain facts...
                 if player == memory.user:
-                    shown = Card(memory, cardname=display.ask("Which card is shown to you?", [c.name for c in leads]))
+                    shown_possible = [lead.name for lead in leads if (memory.has_card(interviewee, lead, player)[0] != False)]
+                    if not shown_possible:
+                        display.log("%s should not be able to show a card..." % interviewee.name)
+                        display.ask("This seems impossible...", ["retry"])
+                        continue
+                    shown = Card(memory, cardname=display.ask("Which card is shown to you?", shown_possible))
                     memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
                     memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=interviewee)
+                    display.log("%s shows you %s." % (interviewee.name, shown.name.upper()))
+                #if we are interviewed we know who knows more...
+                elif interviewee == memory.user:
+                    shown = butler.pick_answer(holding)
+                    memory.add_fact(interviewee, shown, has=True, certainty=1, perspective=player)
+                    display.log("You show %s %s." % (player.name, shown.name.upper()))
+                else:
+                    display.log("%s shows %s a card." % (interviewee.name, player.name))
+
                 #...but in any case everyone gets a clue
                 memory.add_clue(interviewee, leads)
 
-                display.log(interviewee.name+" shows "+player.name+" "+(shown.name.upper() if player == memory.user else "a card")+".")
+
                 break #turn ends when someone can show
 
             else: #cannot show so everyone gains facts
@@ -760,11 +816,12 @@ def gameloop(memory):
                     for lead in leads:
                         memory.add_fact(interviewee, lead, has=False, certainty=1, perspective=inspector)
 
-                display.log(interviewee.name+" cannot show a card.")
+                display.log("%s cannot show a card." % interviewee.name)
 
             interviewee = memory.next_player(interviewee)
 
         memory.whose_turn = memory.next_player(memory.whose_turn)
+        display.log("%s will be next." % memory.whose_turn.name)
 
 
 ### REAL EXECUTION
