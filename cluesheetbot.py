@@ -358,8 +358,8 @@ class Memory(object):
 
 class Display:
     csi = "\033["
-    prompt_row = 20
-    prompt_col = 34
+    prompt_row = 22
+    prompt_col = 39
     prompt_width = 40
     question = ""
     userinput = ""
@@ -369,15 +369,16 @@ class Display:
     matches = None
     logs = {'engine':[], 'game':[]}
     log_row = 3
-    log_col = 34
-    log_height = 15
+    log_col = 39
+    log_height = 17
     log_width = 40
     log_scrollup = 0
     log_max_scrollup = 0
     title_row = 2
-    title_col = 43
-    sheet_row = 2
-    sheet_col = 2
+    title_col = 48
+    sheet_row = 1
+    sheet_col = 1
+    sheet_width = 36
     simbuffer = ""
     recording = True
     recordbuffer = ""
@@ -397,7 +398,7 @@ class Display:
 
     def print_board(self, memory):
         memory.execute("""
-                SELECT c.name, fjoined.player, fjoined.has, fjoined.certainty
+                SELECT c.name, fjoined.player, fjoined.has, fjoined.certainty, c.type
                 FROM cards c JOIN
                     (SELECT player, card, has, certainty FROM facts WHERE perspective = ?) fjoined
                     ON c.id = fjoined.card
@@ -413,22 +414,34 @@ class Display:
             playerid = row[1]
             if name not in card_names:
                 card_names += [name]
-                cards[name] = {'players':{}}
+                cards[name] = {'players':{}, 'type':row[4]}
             cards[name]['players'][playerid] = {'has':row[2], 'certainty':row[3]}
 
         #collection done, now print it
+        current_type = None
         row = self.sheet_row
         players = memory.get_players()
         players.sort(key = lambda p: p.order)
+
+        markers_width = max(6,len(players))*2 +2
+        labels_width = self.sheet_width - markers_width - 2
+
+        self.print_at(row, self.sheet_col, "/%s--%s\\"
+                % ('-'*labels_width, "-".join([p.name[:1] for p in players]).ljust(markers_width-2, '-')))
+        row += 1
         for card_name in card_names:
-            col = self.sheet_col
-            self.print_at(row, col, card_name)
+            if current_type and cards[card_name]['type'] != current_type:
+                self.print_at(row, self.sheet_col, "|%s+%s|" % ('-'*labels_width, '-'*(markers_width-1),))
+                row += 1
+            current_type = cards[card_name]['type']
+            self.print_at(row, self.sheet_col, "|%s|%s|" % (card_name[:labels_width].center(labels_width), ' '*(markers_width-1)))
             has_map = {None:'.', 1:'O', 0:'X'}
-            col_offset = 0
+            col_offset = 2
             for player in players:
-                self.print_at(row, col + 20 + col_offset, has_map[cards[card_name]['players'][player.id]['has']])
+                self.print_at(row, self.sheet_col + 1 + labels_width + col_offset, has_map[cards[card_name]['players'][player.id]['has']])
                 col_offset += 2
             row += 1
+        self.print_at(row, self.sheet_col, "\\%s/" % ('-'*(labels_width+markers_width),))
         return
 
     def update_prompt(self):
