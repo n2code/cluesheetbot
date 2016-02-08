@@ -83,6 +83,7 @@ class Memory(object):
     user = None
     whose_turn = None
     rowcount = 0
+    undo_available = False
 
     def __init__(self, restore_file=None):
         if restore_file:
@@ -676,6 +677,7 @@ class Display:
         return Card(memory, cardname=display.ask(question, [c.name for c in cards]))
 
     def refresh(self, memory):
+        self.clear_screen()
         self.update_kpis()
         self.update_log()
         self.update_prompt()
@@ -722,8 +724,8 @@ def programloop():
         memory.db_setup()
         display.randseed = ""
 
-        for cardtype in cards["names"]:
-            for cardname in cards["names"][cardtype]:
+        for cardtype in sorted(list(cards["names"])):
+            for cardname in sorted(list(cards["names"][cardtype])):
                 memory.new_card(cardname, cardtype.rstrip('s'))
 
         display.log("#FILL(#)\nLet's prepare the game!\nAdd all players starting with you and proceeding clockwise. Commence the game when ready.")
@@ -818,6 +820,7 @@ def programloop():
         random.seed(display.randseed, version=2)
 
         display.log("The game is on!")
+        memory.undo_available = False
 
         while True:
             try:
@@ -829,7 +832,7 @@ def programloop():
 def gameloop(memory):
     memory.run_deductions()
     display.print_board(memory)
-    action = display.ask("", ["turn", "skip", "database", "refresh", "quit"])
+    action = display.ask("", ["turn", "skip"]+(["undo"] if memory.undo_available else [])+["database", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
 
     def ask_perspectives():
@@ -847,14 +850,25 @@ def gameloop(memory):
             display.log("You quit the game prematurely.")
             return True
 
+    elif action == "undo":
+        display.log("#FILL(#)\nYou can time travel back to the point right before you started your last turn.")
+        if display.ask("Undo one and only one turn?", ["yes", "cancel"]) == "yes":
+            memory.execute("ROLLBACK TO SAVEPOINT turnstart")
+            memory.execute("RELEASE SAVEPOINT turnstart")
+            memory.undo_available = False
+            display.log("Summoning TARDIS, reverting changes...\n#FILL(#)")
+            return
+        else:
+            display.log("Aborted undo.\n#FILL(#)")
+
     elif action == "refresh":
-        display.log("Manual screen refresh.")
+        display.log("Manual screen+memory refresh.")
         display.refresh(memory)
 
     elif action == "database":
-        override = display.ask("DANGER! Manually alter memory?", ["update fact", "add clue", "cancel"])
+        override = display.ask("DANGER! Manually alter memory?", ["fact", "clue", "deduce", "cancel"])
 
-        if override == "update fact":
+        if override == "fact":
             player = display.pick_player(memory, "Fact about which player?")
             card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
             has_options = {"holding":True, "missing":False, "unknown":None}
@@ -865,8 +879,12 @@ def gameloop(memory):
 
             display.log("Fact database updated.")
 
-        elif override == "add clue":
+        elif override == "clue":
             raise NotImplementedError("TODO")
+
+        elif override == "deduce":
+            display.log("Triggering deductions...")
+            memory.run_deductions()
 
     elif action == "skip":
         if display.ask("Really skip %s's turn?" % memory.whose_turn.name, ["yes", "no"]) == "yes":
@@ -874,6 +892,11 @@ def gameloop(memory):
             display.log("Skipping player, %s will be next." % memory.whose_turn.name)
 
     elif action == "turn":
+        if memory.undo_available:
+            memory.execute("RELEASE SAVEPOINT turnstart")
+        memory.execute("SAVEPOINT turnstart")
+        memory.undo_available = True
+
         display.log("#FILL(-)")
         player = memory.whose_turn
         butler = Recommender(memory)
@@ -943,6 +966,7 @@ def gameloop(memory):
         memory.whose_turn = memory.next_player(memory.whose_turn)
         display.log("%s will be next." % memory.whose_turn.name)
 
+    pass #always reached unless KeyboardInterrupt or turn undo - but no break or continue bullshit otherwise
 
 ### REAL EXECUTION
 
