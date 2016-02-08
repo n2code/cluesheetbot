@@ -759,8 +759,8 @@ def programloop():
                     adding = False
 
             elif action == "add player":
-                name_pick = display.ask("Player name:")
                 players = memory.get_players()
+                name_pick = display.ask("Player name (%s):" % ("next player clockwise" if players else "YOU!"))
                 playernames_lower = [p.name.lower() for p in players]
                 forbidden = ["all"]
                 while name_pick.lower() in playernames_lower + ["all"]:
