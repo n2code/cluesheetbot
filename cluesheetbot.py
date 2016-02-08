@@ -255,26 +255,29 @@ class Memory(object):
     def run_deductions(self):
         players = self.get_players()
         cards = self.get_cards()
+        changes = 0
 
         #FACT BASED DEDUCTIONS
 
         #Ying-and-Yang (column based hold-or-not-hold deduction)
         self.execute("""
-            WITH plan_raw (perspective, player, has_known, has_target, certainty) AS
-                (WITH allcards (num) AS
-                        (SELECT COUNT(*) FROM cards),
-                    cardlimits (player, has, maxcards) AS
-                        (SELECT id, 1, number_of_cards FROM players
-                         UNION SELECT id, 0, ((SELECT num FROM allcards) - number_of_cards) FROM players),
-                    playercardstats (perspective, player, has, numcards, certainsum) AS
-                        (SELECT perspective, player, has, COUNT(card), TOTAL(certainty)
-                            FROM facts
-                            GROUP BY perspective, player, has)
-                SELECT s.perspective, s.player, s.has, NOT s.has, (1.0 * s.certainsum / s.numcards)
-                    FROM playercardstats s
-                        INNER JOIN cardlimits c
-                        ON s.player = c.player AND s.has = c.has
-                    WHERE s.numcards = c.maxcards),
+            WITH
+                plan_raw (perspective, player, has_known, has_target, certainty) AS
+                    (WITH
+                        allcards (num) AS
+                            (SELECT COUNT(*) FROM cards),
+                        cardlimits (player, has, maxcards) AS
+                            (SELECT id, 1, number_of_cards FROM players
+                             UNION SELECT id, 0, ((SELECT num FROM allcards) - number_of_cards) FROM players),
+                        playercardstats (perspective, player, has, numcards, certainsum) AS
+                            (SELECT perspective, player, has, COUNT(card), TOTAL(certainty)
+                                FROM facts
+                                GROUP BY perspective, player, has)
+                    SELECT s.perspective, s.player, s.has, NOT s.has, (1.0 * s.certainsum / s.numcards)
+                        FROM playercardstats s
+                            INNER JOIN cardlimits c
+                            ON s.player = c.player AND s.has = c.has
+                        WHERE s.numcards = c.maxcards),
                 plan (perspective, player, has_known, has_target, certainty) AS
                     (SELECT * FROM plan_raw a
                         WHERE NOT EXISTS
@@ -296,8 +299,10 @@ class Memory(object):
                     (SELECT 42 FROM plan
                         WHERE facts.perspective = plan.perspective
                             AND facts.player = plan.player
-                            AND (facts.has IS NULL OR facts.has = plan.has_target))
+                            AND facts.has IS NULL)
         """)
+        self.execute("SELECT CHANGES()")
+        changes += self.fetchall()[0][0]
 
         #Highlander (there can be only one player who holds a card)
         self.execute("""
@@ -321,7 +326,10 @@ class Memory(object):
                             AND facts.player = plan.poorplayer
                             AND facts.card = plan.card);
         """)
-        return
+        self.execute("SELECT CHANGES()")
+        changes += self.fetchall()[0][0]
+
+        return changes
 
 
 class Display:
@@ -796,7 +804,9 @@ def programloop():
                 display.log("Panic abort from current command.")
 
 def gameloop(memory):
-    memory.run_deductions()
+    newfacts = memory.run_deductions()
+    if newfacts:
+        display.log("[Deducted %i new fact(s).]" % newfacts)
     display.print_board(memory)
     action = display.ask("", ["turn", "skip", "database", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
