@@ -578,7 +578,7 @@ class Display:
         self.update_prompt()
         self.print_board(memory)
 
-class Recommender:
+class Recommender: #TODO do proper recommendations
     def __init__(self, memory):
         self.memory = memory
 
@@ -719,7 +719,7 @@ def programloop():
 
 def gameloop(memory):
     display.print_board(memory)
-    action = display.ask("", ["turn", "manual fact", "refresh", "quit"])
+    action = display.ask("", ["turn", "skip", "database", "refresh", "quit"])
     display.save_recording("autosave.sav", inform_user=False)
 
     def ask_perspectives():
@@ -733,7 +733,7 @@ def gameloop(memory):
 
 
     if action == "quit":
-        if display.ask("Really quit the running game?", ["yes", "no", "cancel"]) == "yes":
+        if display.ask("Really quit the running game?", ["yes", "cancel"]) == "yes":
             display.log("You quit the game prematurely.")
             return True
 
@@ -741,8 +741,10 @@ def gameloop(memory):
         display.log("Manual screen refresh.")
         display.refresh(memory)
 
-    elif action == "manual fact":
-        if display.ask("Ignore mechanics & manually add fact?", ["override", "cancel"]) == "override":
+    elif action == "database":
+        override = display.ask("DANGER! Manually alter memory?", ["update fact", "add clue", "cancel"])
+
+        if override == "update fact":
             player = display.pick_player(memory, "Fact about which player?")
             card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
             has_options = {"holding":True, "missing":False, "unknown":None}
@@ -751,7 +753,15 @@ def gameloop(memory):
             for current_perspective in ask_perspectives():
                 memory.add_fact(player, card, has, certainty=None, perspective=current_perspective)
 
-            display.log("Fact manually added.")
+            display.log("Fact database updated.")
+
+        elif override == "add clue":
+            raise NotImplementedError("TODO")
+
+    elif action == "skip":
+        if display.ask("Really skip %s's turn?" % memory.whose_turn.name, ["yes", "no"]) == "yes":
+            memory.whose_turn = memory.next_player(memory.whose_turn)
+            display.log("Skipping player, %s will be next." % memory.whose_turn.name)
 
     elif action == "turn":
         display.log("#FILL(-)")
