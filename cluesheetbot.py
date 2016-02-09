@@ -810,16 +810,6 @@ class Recommender: #TODO do proper recommendations
 
 ### GAME FLOW ###
 
-#Initialization
-cards = {
-        "names": {
-            "suspects": ["Miss Red", "Prof. Purple", "Mrs. Blue", "Rev. Green", "Col. Yellow", "Mrs. White"],
-            "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
-            "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
-            }
-        }
-
-
 def programloop():
     action = display.ask("", ["new game", "exit"])
 
@@ -1105,6 +1095,16 @@ display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to
 
 if sys.argv[1:]:
     display.load_recording(sys.argv[1])
+
+cards = {
+    "names": {
+        "suspects": ["Colonel Mustard", "Miss Scarlett", "Professor Plum", "Reverend Green", "Mrs. White", "Mrs. Peacock"],
+        "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
+        "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+    }
+}
+
+
 
 while True:
     try:
