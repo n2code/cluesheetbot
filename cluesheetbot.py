@@ -475,12 +475,10 @@ class Display:
 
     def print_board(self, memory):
         memory.execute("""
-                SELECT c.name, fjoined.player, fjoined.has, fjoined.certainty, c.type
-                FROM cards c JOIN
-                    (SELECT player, card, has, certainty FROM facts WHERE perspective = ?) fjoined
-                    ON c.id = fjoined.card
-                ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC
-                """, (memory.perspective.id,))
+            SELECT c.name, f.player, f.has, f.certainty, c.type, f.perspective
+                FROM cards c JOIN facts f ON c.id = f.card
+                ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC, f.perspective = ? DESC
+            """, (memory.perspective.id,))
         rows = memory.fetchall()
         card_names = [] #keep names separately to recall order
         cards = {}
@@ -489,10 +487,18 @@ class Display:
         for row in rows:
             name = row[0]
             playerid = row[1]
+            has = row[2]
+            certainty = row[3]
+            type = row[4]
+            perspective = row[5]
+
             if name not in card_names:
                 card_names += [name]
-                cards[name] = {'players':{}, 'type':row[4]}
-            cards[name]['players'][playerid] = {'has':row[2], 'certainty':row[3]}
+                cards[name] = {'players':{}, 'type':type}
+            if perspective == memory.perspective.id:
+                cards[name]['players'][playerid] = {'has':has, 'certainty':certainty, 'knows':None}
+            elif has:
+                cards[name]['players'][perspective]['knows'] = True
 
         #collection done, now print it
         current_type = None
@@ -512,10 +518,18 @@ class Display:
                 row += 1
             current_type = cards[card_name]['type']
             self.print_at(row, self.sheet_col, "|%s|%s|" % (card_name[:labels_width].center(labels_width), ' '*(markers_width-1)))
-            has_map = {None:'.', 1:'O', 0:'X'}
             col_offset = 2
             for player in players:
-                self.print_at(row, self.sheet_col + 1 + labels_width + col_offset, has_map[cards[card_name]['players'][player.id]['has']])
+                relation = cards[card_name]['players'][player.id]
+                if relation['has']:
+                    symbol = 'O'
+                elif relation['knows']:
+                    symbol = '!'
+                elif relation['has'] == False:
+                    symbol = 'X'
+                else:
+                    symbol = '.'
+                self.print_at(row, self.sheet_col + 1 + labels_width + col_offset, symbol)
                 col_offset += 2
             row += 1
         self.print_at(row, self.sheet_col, "\\%s/" % ('-'*(labels_width+markers_width),))
@@ -766,10 +780,11 @@ class Display:
             cards = [c for c in cards if c.type == cardtype.rstrip('s')]
         return Card(memory, cardname=display.ask(question, [c.name for c in cards]))
 
-    def refresh(self, memory, deduce=False):
+    def refresh(self, memory, deduce=False, clear_screen=False):
         if deduce:
             memory.run_deductions()
-        self.clear_screen()
+        if clear_screen:
+            self.clear_screen()
         self.update_kpis()
         self.update_log()
         self.update_prompt()
@@ -951,7 +966,7 @@ def gameloop(memory):
 
     elif action == "refresh":
         display.log("Manual screen refresh.")
-        display.refresh(memory, deduce=False)
+        display.refresh(memory, deduce=False, clear_screen=True)
 
     elif action == "database":
         override = display.ask("DANGER ZONE! Manually alter database?", ["fact", "clue", "commit", "cancel"])
