@@ -896,7 +896,7 @@ def programloop():
         user_cardnames = []
         for i in range(memory.user.number_of_cards):
             card = Card(memory, cardname=display.ask("Which cards do you have? ("+str(i+1)+" of "+str(memory.user.number_of_cards)+")", [c.name for c in memory.get_cards() if c.name not in user_cardnames]))
-            user_cardnames += [card]
+            user_cardnames += [card.name]
             memory.add_fact(memory.user, card, has=True, certainty=1, perspective=memory.user)
             display.randseed += card.name
 
