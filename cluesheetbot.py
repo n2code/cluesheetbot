@@ -497,9 +497,10 @@ class Display:
                 card_names += [name]
                 cards[name] = {'players':{}, 'type':type}
             if perspective == memory.perspective_board.id:
-                cards[name]['players'][playerid] = {'has':has, 'certainty':certainty, 'knows':None}
+                cards[name]['players'][playerid] = {'has':has, 'certainty':certainty, 'knows':None, 'knows_certainty':None}
             elif has:
                 cards[name]['players'][perspective]['knows'] = True
+                cards[name]['players'][perspective]['knows_certainty'] = certainty
 
         #collection done, now print it
         current_type = None
@@ -525,7 +526,10 @@ class Display:
                 if relation['has']:
                     symbol = 'O'
                 elif relation['knows']:
-                    symbol = '!'
+                    if relation['knows_certainty'] == 1.0:
+                        symbol = '!'
+                    else:
+                        symbol = '?'
                 elif relation['has'] == False:
                     symbol = 'X'
                 else:
