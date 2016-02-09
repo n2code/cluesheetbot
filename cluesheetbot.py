@@ -379,7 +379,56 @@ class Memory(object):
         changes += self.fetchall()[0][0]
 
         #CLUE-BASED DEDUCTIONS
-        #TODO
+
+        #First refine clues...
+        self.execute("""
+            WITH analysis (perspective, number, player, lead, has) AS
+                (SELECT cl.perspective, cl.number, cl.player, cl.lead, f.has
+                    FROM clues cl
+                        JOIN facts f
+                            ON cl.perspective = f.perspective
+                                AND cl.player = f.player
+                                AND cl.lead = f.card
+                    WHERE f.has = 0)
+            DELETE FROM clues
+                WHERE EXISTS
+                    (SELECT 42 FROM analysis a
+                        WHERE a.perspective = clues.perspective
+                            AND a.number = clues.number
+                            AND a.player = clues.player
+                            AND a.lead = clues.lead)
+        """)
+        #...then use resolved clues...
+        self.execute("""
+            WITH remainders (perspective, number, player, lead) AS
+                (SELECT perspective, number, player, SUM(lead)
+                    FROM clues
+                    GROUP BY perspective, number, player
+                    HAVING COUNT(lead) = 1)
+            UPDATE facts
+                SET has = 1, certainty = 0.5
+                WHERE EXISTS
+                    (SELECT 42 FROM remainders r
+                        WHERE r.perspective = facts.perspective
+                            AND r.player = facts.player
+                            AND r.lead = facts.card
+                            AND facts.has IS NULL)
+        """)
+        self.execute("SELECT CHANGES()")
+        changes += self.fetchall()[0][0]
+        #...and delete them afterwards
+        self.execute("""
+            WITH usedup (perspective, number) AS
+                (SELECT perspective, number
+                    FROM clues
+                    GROUP BY perspective, number, player
+                    HAVING COUNT(lead) = 1)
+            DELETE FROM clues
+                WHERE EXISTS
+                    (SELECT 42 FROM usedup u
+                        WHERE u.perspective = clues.perspective
+                            AND u.number = clues.number)
+        """)
 
         return changes
 
