@@ -81,6 +81,7 @@ class Memory(object):
     perspective_default = None
     user = None
     whose_turn = None
+    whose_turn_undo = None
     rowcount = 0
     undo_savepoint_exists = False
     undo_available = False
@@ -903,8 +904,8 @@ def programloop():
         memory.user = players[0]
 
         #Default perspective is the user
-        memory.perspective_default = players[0]
-        memory.perspective = players[0]
+        memory.perspective_default = memory.user
+        memory.perspective = memory.user
 
         #User's cards
         display.log("Recording your cards...")
@@ -958,6 +959,7 @@ def gameloop(memory):
         if display.ask("Undo one and only one turn?", ["yes", "cancel"]) == "yes":
             memory.execute("ROLLBACK TO SAVEPOINT undoturn")
             memory.execute("RELEASE SAVEPOINT undoturn")
+            memory.whose_turn = memory.whose_turn_undo
             memory.undo_available, memory.undo_savepoint_exists = False, False
             display.log("Summoning TARDIS, reverting changes...\n#FILL(#)")
             return
@@ -1004,6 +1006,7 @@ def gameloop(memory):
         if memory.undo_savepoint_exists:
             memory.execute("RELEASE SAVEPOINT undoturn")
         memory.execute("SAVEPOINT undoturn")
+        memory.whose_turn_undo = memory.whose_turn
         memory.undo_savepoint_exists = True
 
         display.log("#FILL(-)")
