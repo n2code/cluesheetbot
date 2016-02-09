@@ -1,6 +1,16 @@
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
-import sqlite3, os, shutil, string, re, datetime, random, traceback
-import sys, tty, termios
+import argparse
+import datetime
+import os
+import random
+import re
+import shutil
+import sqlite3
+import string
+import sys
+import termios
+import traceback
+import tty
 
 class DB(object):
     def __init__(self, dbname, clone_from=None):
@@ -461,10 +471,6 @@ class Display:
     recording = True
     recordbuffer = ""
     randseed = ""
-
-    def __init__(self):
-        #self.clear_screen()
-        return
 
     def print_at(self, row, col, text):
         print(self.csi + str(row) + ";" + str(col) + "H" + text, end='')
@@ -1088,23 +1094,50 @@ def gameloop(memory):
     pass #always reached unless KeyboardInterrupt or turn undo - but no break or continue bullshit otherwise
 
 ### REAL EXECUTION
-
 display = Display()
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--replay', action='store', required=False,
+                    help="Opens the given replay file", metavar='SAVEFILE')
+parser.add_argument('--cards', action='store', required=False, default='original',
+                    help="Uses the given cards file for custom Cluedo variants", metavar='CARDSFILE')
+args = parser.parse_args()
+
 display.clear_screen()
-display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
+if args.replay:
+    display.load_recording(args.replay)
 
-if sys.argv[1:]:
-    display.load_recording(sys.argv[1])
-
-cards = {
-    "names": {
-        "suspects": ["Colonel Mustard", "Miss Scarlett", "Professor Plum", "Reverend Green", "Mrs. White", "Mrs. Peacock"],
-        "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
-        "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+if args.cards == "original":
+    cards = {
+        "names": {
+            "suspects": ["Colonel Mustard", "Miss Scarlett", "Professor Plum", "Reverend Green", "Mrs. White", "Mrs. Peacock"],
+            "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
+            "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+        }
     }
-}
+else:
+    cards = {
+        "names": {
+            "suspects": [],
+            "weapons": [],
+            "rooms": []
+        }
+    }
+    with open(args.cards, 'rU') as cardsfile:
+        for line in cardsfile.readlines():
+            for category in ["suspects", "weapons", "rooms"]:
+                match = re.match("^%s:(.+)" % category, line, flags=re.IGNORECASE)
+                if match:
+                    cards["names"][category] = match.group(1).split(',')
+    if not all([len(cards["names"][cat]) >= 6 for cat in cards["names"]]):
+        print("Cards file has wrong format!\nExpected three lines as follows with a minimum of six cards per category:")
+        print("suspects:A,B,C...")
+        print("weapons:A,B,C...")
+        print("rooms:A,B,C...")
+        sys.exit()
 
 
+display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
 
 while True:
     try:
