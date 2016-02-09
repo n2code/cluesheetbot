@@ -77,8 +77,8 @@ class Card(object):
 
 class Memory(object):
     real_file = 'cluesheetbot.db.tmp'
-    perspective = None
     perspective_default = None
+    perspective_board = None
     user = None
     whose_turn = None
     whose_turn_undo = None
@@ -224,7 +224,7 @@ class Memory(object):
 
     def assure_perspective(self, perspective):
         if not perspective:
-            perspective = self.perspective
+            perspective = self.perspective_default
         if not perspective:
             raise LookupError("No perspective set!")
         else:
@@ -479,7 +479,7 @@ class Display:
             SELECT c.name, f.player, f.has, f.certainty, c.type, f.perspective
                 FROM cards c JOIN facts f ON c.id = f.card
                 ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC, f.perspective = ? DESC
-            """, (memory.perspective.id,))
+            """, (memory.perspective_board.id,))
         rows = memory.fetchall()
         card_names = [] #keep names separately to recall order
         cards = {}
@@ -496,7 +496,7 @@ class Display:
             if name not in card_names:
                 card_names += [name]
                 cards[name] = {'players':{}, 'type':type}
-            if perspective == memory.perspective.id:
+            if perspective == memory.perspective_board.id:
                 cards[name]['players'][playerid] = {'has':has, 'certainty':certainty, 'knows':None}
             elif has:
                 cards[name]['players'][perspective]['knows'] = True
@@ -905,7 +905,7 @@ def programloop():
 
         #Default perspective is the user
         memory.perspective_default = memory.user
-        memory.perspective = memory.user
+        memory.perspective_board = memory.user
 
         #User's cards
         display.log("Recording your cards...")
