@@ -978,9 +978,11 @@ def gameloop(memory):
             card = Card(memory, cardname=display.ask(player.name+"'s relation to which card?", [c.name for c in memory.get_cards()]))
             has_options = {"holding":True, "missing":False, "unknown":None}
             has = has_options[display.ask("What about the card?", list(has_options))]
+            certainty_options = {"maybe":0.3, "probably":0.7, "absolutely":1.0}
+            certainty = certainty_options[display.ask("How certain is this?", list(certainty_options))]
 
             for current_perspective in ask_perspectives():
-                memory.add_fact(player, card, has, certainty=None, perspective=current_perspective)
+                memory.add_fact(player, card, has, certainty=certainty, perspective=current_perspective)
 
             display.log("Fact table updated.")
 
