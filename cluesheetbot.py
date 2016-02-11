@@ -471,6 +471,7 @@ class Display:
     recording = True
     recordbuffer = ""
     randseed = ""
+    typing_replay = False
 
     def print_at(self, row, col, text):
         print(self.csi + str(row) + ";" + str(col) + "H" + text, end='')
@@ -584,21 +585,28 @@ class Display:
             display.log("Saved game as "+filename)
 
     def getch(self):
+        ch = '\0'
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(sys.stdin.fileno())
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        return ch
+
+    def getchar(self):
         if self.simbuffer:
             ch, self.simbuffer = self.simbuffer[0], self.simbuffer[1:]
+            if self.typing_replay:
+                self.getch()
             if not self.simbuffer:
-                display.log("Game successfully loaded!")
+                display.log("#FILL(~)\nReplay completed!\n#FILL(~)")
                 termios.tcflush(sys.stdin, termios.TCIOFLUSH)
         else:
-            fd = sys.stdin.fileno()
-            old_settings = termios.tcgetattr(fd)
-            try:
-                tty.setraw(sys.stdin.fileno())
-                ch = sys.stdin.read(1)
-            finally:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            ch = self.getch()
 
-        #self.log("Getch received: "+str(ord(ch)))
+        #self.log("getchar received: "+str(ord(ch)))
 
         if ord(ch) == 19: #Manual save with Ctrl+S
             filename = "CSBot_"+datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")+".sav"
@@ -632,10 +640,10 @@ class Display:
             sys.stdout.flush()
 
             #Get input
-            keycode = self.getch()
+            keycode = self.getchar()
             if keycode == '\033':
-                self.getch() #skip [
-                keycode = self.getch()
+                self.getchar() #skip [
+                keycode = self.getchar()
                 arrows = {'A':"up",'B':"down",'C':"right",'D':"left"}
                 if keycode in arrows:
                     arrow = arrows[keycode]
@@ -1101,6 +1109,8 @@ display = Display()
 parser = argparse.ArgumentParser()
 parser.add_argument('--replay', action='store', required=False,
                     help="Opens the given replay file", metavar='SAVEFILE')
+parser.add_argument('--typing', action='store_true', required=False,
+                    help="Activates manual replay mode in which one character is replayed with each key pressed")
 parser.add_argument('--cards', action='store', required=False, default='original',
                     help="Uses the given cards file for custom Cluedo variants", metavar='CARDSFILE')
 args = parser.parse_args()
@@ -1108,6 +1118,8 @@ args = parser.parse_args()
 display.clear_screen()
 if args.replay:
     display.load_recording(args.replay)
+    if args.typing:
+        display.typing_replay = True
 
 if args.cards == "original":
     cards = {
