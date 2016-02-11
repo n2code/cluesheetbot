@@ -56,7 +56,7 @@ class Player(object):
             raise RuntimeError("Player lookup failed")
         self.id = rows[0][0]
         self.order = rows[0][1]
-        self.suspectcard = Card(memory, rows[0][2])
+        self.suspectcard = Card(memory, cardid=rows[0][2])
         self.number_of_cards = rows[0][3]
         self.name = rows[0][4]
 
@@ -83,6 +83,13 @@ class Card(object):
         self.id = rows[0][0]
         self.type = rows[0][1]
         self.name = rows[0][2]
+
+    def __eq__(self, other):
+        return (isinstance(other, self.__class__)
+            and self.id == other.id)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
 
 
 class Memory(object):
@@ -528,7 +535,11 @@ class Display:
             current_type = cards[card_name]['type']
             self.print_at(row, self.sheet_col, "|%s|%s|" % (card_name[:labels_width].center(labels_width), ' '*(markers_width-1)))
             col_offset = 2
+
             for player in players:
+                if player.suspectcard.name == card_name:
+                    self.print_at(row, self.sheet_col, player.name[:1])
+
                 relation = cards[card_name]['players'][player.id]
                 if relation['has']:
                     symbol = 'O'
