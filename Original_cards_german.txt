@@ -1,0 +1,3 @@
+suspects:Oberst von Gatow,Professor Bloom,Reverend Grün,Baronin von Porz,Fräulein Gloria,Frau Weiss
+weapons:Dolch,Leuchter,Pistole,Seil,Heizungsrohrpipe,Rohrzange
+rooms:Halle,Salon,Speisezimmer,Küche,Musikzimmer,Wintergarten,Billardzimmer,Bibliothek,Arbeitszimmer
