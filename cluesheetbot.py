@@ -166,9 +166,11 @@ class Memory(object):
             perspective INTEGER NOT NULL,
             number INTEGER NOT NULL,
             player INTEGER NOT NULL,
+            questioner INTEGER NOT NULL,
             lead INTEGER NOT NULL,
             FOREIGN KEY(perspective) REFERENCES players(id),
             FOREIGN KEY(player) REFERENCES players(id),
+            FOREIGN KEY(questioner) REFERENCES players(id),
             FOREIGN KEY(lead) REFERENCES cards(id)
         )
         """)
@@ -224,16 +226,16 @@ class Memory(object):
                         WHERE perspective = ? AND player = ? AND card = ?""",
                 (has, certainty, perspective.id, player.id, card.id))
 
-    def add_clue(self, player, leads):
+    def add_clue(self, questioner, interviewee, leads):
         if len(leads) != 3:
             raise AssertionError("Clue should contain three cards")
-        self.execute("""INSERT INTO clues (perspective, number, player, lead)
+        self.execute("""INSERT INTO clues (perspective, number, questioner, player, lead)
                             WITH number (last) AS (SELECT IFNULL(MAX(number),0) FROM clues)
-                            SELECT p.id, (number.last+1), ?, leads.id
+                            SELECT p.id, (number.last+1), ?, ?, leads.id
                                 FROM players p
                                     JOIN number
                                     JOIN (SELECT ? id UNION SELECT ? id UNION SELECT ? id) leads
-                     """, (player.id,)+tuple(c.id for c in leads))
+                     """, (questioner.id, interviewee.id,)+tuple(c.id for c in leads))
 
     def next_player(self, current):
         players = self.get_players()
@@ -398,7 +400,7 @@ class Memory(object):
 
         #CLUE-BASED DEDUCTIONS
 
-        #First refine clues...
+        #First refine clues to generate new information...
         self.execute("""
             WITH analysis (perspective, number, player, lead, has) AS
                 (SELECT cl.perspective, cl.number, cl.player, cl.lead, f.has
@@ -416,7 +418,24 @@ class Memory(object):
                             AND a.player = clues.player
                             AND a.lead = clues.lead)
         """)
-        #...then use resolved clues...
+        #...then note that the questioner definitely knows the answer...
+        self.execute("""
+            WITH remainders (perspective, questioner, player, lead) AS
+                (SELECT perspective, questioner, player, SUM(lead)
+                    FROM clues
+                    GROUP BY perspective, number, questioner, player
+                    HAVING COUNT(lead) = 1)
+            UPDATE facts
+                SET has = 1, certainty = 1.0
+                WHERE EXISTS
+                    (SELECT 42 FROM remainders r
+                        WHERE r.questioner = facts.perspective
+                            AND r.player = facts.player
+                            AND r.lead = facts.card)
+        """)
+        self.execute("SELECT CHANGES()")
+        changes += self.fetchall()[0][0]
+        #...also resolve the rest of the clue from the solver's perspective...
         self.execute("""
             WITH remainders (perspective, number, player, lead) AS
                 (SELECT perspective, number, player, SUM(lead)
@@ -1084,7 +1103,7 @@ def gameloop(memory):
                         display.log("%s shows %s a card." % (interviewee.name, player.name))
 
                     #...but in any case everyone gets a clue
-                    memory.add_clue(interviewee, leads)
+                    memory.add_clue(player, interviewee, leads)
 
 
                     break #turn ends when someone can show
