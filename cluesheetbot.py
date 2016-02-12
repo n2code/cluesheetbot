@@ -497,6 +497,7 @@ class Display:
     recording = True
     recordbuffer = ""
     randseed = ""
+    cardsfile = ""
     typing_replay = False
 
     def print_at(self, row, col, text):
@@ -604,12 +605,13 @@ class Display:
 
     def load_recording(self, filename, inform_user=True):
         with open(filename, "r", newline='') as save:
-            self.simbuffer = save.read()
+            self.cardsfile, self.simbuffer = tuple(save.read().split('\0', maxsplit=1))
         if inform_user:
             display.log("Loading game from "+filename)
 
     def save_recording(self, filename, inform_user=True):
         with open(filename, "w", newline='') as save:
+            save.write(self.cardsfile + '\0')
             save.write(self.recordbuffer)
         if inform_user:
             display.log("Saved game as "+filename)
@@ -838,6 +840,39 @@ class Display:
         self.update_log()
         self.update_prompt()
         self.print_board(memory)
+
+    def get_card_config(self, config=None):
+        if config:
+            self.cardsfile = config
+            cards = {
+                "names": {
+                    "suspects": [],
+                    "weapons": [],
+                    "rooms": []
+                }
+            }
+            with open(self.cardsfile, 'rU') as cardsfile:
+                for line in cardsfile.readlines():
+                    for category in ["suspects", "weapons", "rooms"]:
+                        match = re.match("^%s:(.+)" % category, line, flags=re.IGNORECASE)
+                        if match:
+                            cards["names"][category] = match.group(1).split(',')
+            if not all([len(cards["names"][cat]) >= 6 for cat in cards["names"]]):
+                print("Cards file has wrong format!\nExpected three lines as follows with a minimum of six cards per category:")
+                print("suspects:A,B,C...")
+                print("weapons:A,B,C...")
+                print("rooms:A,B,C...")
+                sys.exit()
+        else:
+            cards = {
+                "names": {
+                    "suspects": ["Colonel Mustard", "Miss Scarlett", "Professor Plum", "Reverend Green", "Mrs. White", "Mrs. Peacock"],
+                    "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
+                    "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
+                }
+            }
+        return cards
+
 
 class Recommender: #TODO do proper recommendations
     def __init__(self, memory):
@@ -1141,45 +1176,20 @@ parser.add_argument('--replay', action='store', required=False,
                     help="Opens the given replay file", metavar='SAVEFILE')
 parser.add_argument('--typing', action='store_true', required=False,
                     help="Activates manual replay mode in which one character is replayed with each key pressed")
-parser.add_argument('--cards', action='store', required=False, default='original',
+parser.add_argument('--cards', action='store', required=False, default="",
                     help="Uses the given cards file for custom Cluedo variants", metavar='CARDSFILE')
 args = parser.parse_args()
 
 display.clear_screen()
+
+display.cardsfile = args.cards
+
 if args.replay:
     display.load_recording(args.replay)
     if args.typing:
         display.typing_replay = True
 
-if args.cards == "original":
-    cards = {
-        "names": {
-            "suspects": ["Colonel Mustard", "Miss Scarlett", "Professor Plum", "Reverend Green", "Mrs. White", "Mrs. Peacock"],
-            "weapons": ["Candlestick", "Dagger", "Lead pipe", "Revolver", "Rope", "Wrench"],
-            "rooms": ["Kitchen", "Ballroom", "Conservatory", "Billiard Room", "Library", "Study", "Hall", "Lounge", "Dining Room"]
-        }
-    }
-else:
-    cards = {
-        "names": {
-            "suspects": [],
-            "weapons": [],
-            "rooms": []
-        }
-    }
-    with open(args.cards, 'rU') as cardsfile:
-        for line in cardsfile.readlines():
-            for category in ["suspects", "weapons", "rooms"]:
-                match = re.match("^%s:(.+)" % category, line, flags=re.IGNORECASE)
-                if match:
-                    cards["names"][category] = match.group(1).split(',')
-    if not all([len(cards["names"][cat]) >= 6 for cat in cards["names"]]):
-        print("Cards file has wrong format!\nExpected three lines as follows with a minimum of six cards per category:")
-        print("suspects:A,B,C...")
-        print("weapons:A,B,C...")
-        print("rooms:A,B,C...")
-        sys.exit()
-
+cards = display.get_card_config(display.cardsfile)
 
 display.log("Welcome to Clue/Cluedo!\n\nType available commands in [brackets] to interact. Hit TAB to cycle through options, type ? to get a full list and use ENTER to accept. Clear the input line with CTRL+U. Use arrow keys to scroll in tabs and switch between tabs. Once the game has started CTRL+C aborts the current command. CTRL+Q exits *immediately*.")
 
