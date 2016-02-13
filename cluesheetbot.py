@@ -565,8 +565,10 @@ class Display:
                 self.print_at(row, self.sheet_col, "|%s+%s|" % ('-'*labels_width, '-'*(markers_width-1),))
                 row += 1
             current_type = cards[card_name]['type']
-            card_label = card_name.upper() if cards[card_name]['players'][memory.perspective_board.id]['knows_hasnot']['counter'] == len(players) else card_name
-            self.print_at(row, self.sheet_col, "|%s|%s|" % (card_label[:labels_width].center(labels_width), ' '*(markers_width-1)))
+            card_label = card_name[:labels_width].center(labels_width)
+            if cards[card_name]['players'][memory.perspective_board.id]['knows_hasnot']['counter'] == len(players):
+                card_label = display.csi + "31;1m" + card_label.upper() + display.csi + "0m"
+            self.print_at(row, self.sheet_col, "|%s|%s|" % (card_label, ' '*(markers_width-1)))
             col_offset = 2
 
             for player in players:
