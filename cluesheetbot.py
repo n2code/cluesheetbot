@@ -512,11 +512,14 @@ class Display:
         memory.execute("""
             SELECT c.name, f.player, f.has, f.certainty, c.type, f.perspective
                 FROM cards c JOIN facts f ON c.id = f.card
-                ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC, f.perspective = ? DESC
-            """, (memory.perspective_board.id,))
+                ORDER BY c.type = 'suspect' DESC, c.type = 'weapon' DESC, c.type = 'room' DESC, c.name ASC, f.perspective = ? DESC, f.player = ? DESC
+            """, (memory.perspective_board.id, memory.perspective_board.id))
         rows = memory.fetchall()
         card_names = [] #keep names separately to recall order
         cards = {}
+
+        players = memory.get_players()
+        players.sort(key = lambda p: p.order)
 
         #first aggregate: grouping by card and splitting into players
         for row in rows:
@@ -530,17 +533,26 @@ class Display:
             if name not in card_names:
                 card_names += [name]
                 cards[name] = {'players':{}, 'type':type}
+
+            #rows ordered by board perspective so if branch WILL trigger and therefore avoid index errors in later block
             if perspective == memory.perspective_board.id:
-                cards[name]['players'][playerid] = {'has':has, 'certainty':certainty, 'knows':None, 'knows_certainty':None}
-            elif has:
-                cards[name]['players'][perspective]['knows'] = True
-                cards[name]['players'][perspective]['knows_certainty'] = certainty
+                cards[name]['players'][playerid] = {
+                    'has': {'value': has, 'certainty':certainty},
+                    'knows': {'value':None, 'certainty':None},
+                    'knows_hasnot': {'counter':0, 'certainty':1.0}
+                }
+
+            #now processing perspectives - this only matters for displaying knowledge, not posession
+            if has == True:
+                cards[name]['players'][perspective]['knows']['value'] = True
+                cards[name]['players'][perspective]['knows']['certainty'] = certainty
+            elif has == False:
+                cards[name]['players'][perspective]['knows_hasnot']['counter'] += 1
+                cards[name]['players'][perspective]['knows_hasnot']['certainty'] = min(certainty, cards[name]['players'][perspective]['knows_hasnot']['certainty'])
 
         #collection done, now print it
         current_type = None
         row = self.sheet_row
-        players = memory.get_players()
-        players.sort(key = lambda p: p.order)
 
         markers_width = max(6,len(players))*2 +2
         labels_width = self.sheet_width - markers_width - 2
@@ -553,7 +565,8 @@ class Display:
                 self.print_at(row, self.sheet_col, "|%s+%s|" % ('-'*labels_width, '-'*(markers_width-1),))
                 row += 1
             current_type = cards[card_name]['type']
-            self.print_at(row, self.sheet_col, "|%s|%s|" % (card_name[:labels_width].center(labels_width), ' '*(markers_width-1)))
+            card_label = card_name.upper() if cards[card_name]['players'][memory.perspective_board.id]['knows_hasnot']['counter'] == len(players) else card_name
+            self.print_at(row, self.sheet_col, "|%s|%s|" % (card_label[:labels_width].center(labels_width), ' '*(markers_width-1)))
             col_offset = 2
 
             for player in players:
@@ -561,14 +574,19 @@ class Display:
                     self.print_at(row, self.sheet_col, player.name[:1])
 
                 relation = cards[card_name]['players'][player.id]
-                if relation['has']:
+                if relation['has']['value']:
                     symbol = 'O'
-                elif relation['knows']:
-                    if relation['knows_certainty'] == 1.0:
+                elif relation['knows_hasnot']['counter'] == len(players):
+                    if relation['knows_hasnot']['certainty'] == 1.0:
                         symbol = '!'
                     else:
                         symbol = '?'
-                elif relation['has'] == False:
+                elif relation['knows']['value']:
+                    if relation['knows']['certainty'] == 1.0:
+                        symbol = '!'
+                    else:
+                        symbol = '?'
+                elif relation['has']['value'] == False:
                     symbol = 'X'
                 else:
                     symbol = '.'
@@ -625,6 +643,8 @@ class Display:
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        if ord(ch) == 17: #Quit with Ctrl+Q
+            raise SystemExit("fast quit")
         return ch
 
     def getchar(self):
@@ -646,8 +666,6 @@ class Display:
         elif self.recording: #in else to not record manual saves
             self.recordbuffer += ch
 
-        if ord(ch) == 17: #Quit with Ctrl+Q
-            raise SystemExit("fast quit")
         if ord(ch) == 3: #Quit command with Ctrl+C
             raise KeyboardInterrupt("panic abort")
         return ch
