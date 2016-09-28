@@ -1,3 +1,4 @@
+#!/bin/python3
 # ClueSheetBot is a clue[do] sheet at first sight but records EVERYTHING and thereby does fancy advanced logic stuff
 import argparse
 import datetime
